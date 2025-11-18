@@ -4,7 +4,8 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { Star, Wifi, Mountain, Flame, Droplet } from "lucide-react"
-import { getRooms, type Room } from "@/lib/storage"
+import { type Room } from "@/lib/storage"
+import { fetchRooms } from "@/lib/api"
 
 const featureIcons: Record<string, React.ReactNode> = {
   "Mountain View": <Mountain size={16} />,
@@ -19,8 +20,17 @@ export default function Rooms() {
   const [rooms, setRooms] = useState<Room[]>([])
 
   useEffect(() => {
-    setRooms(getRooms())
+    loadRooms()
   }, [])
+  
+  const loadRooms = async () => {
+    try {
+      const roomsData = await fetchRooms()
+      setRooms(roomsData)
+    } catch (error) {
+      console.error('Failed to load rooms:', error)
+    }
+  }
 
   return (
     <section id="rooms" className="py-24 md:py-32 bg-background">

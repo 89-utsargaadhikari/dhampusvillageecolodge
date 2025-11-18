@@ -2,7 +2,14 @@
 
 import { useState, useEffect } from "react"
 import { Receipt, Download, Printer, Check } from "lucide-react"
-import { getBookings } from "@/lib/storage"
+import { 
+  fetchBookings, 
+  updateBooking,
+  fetchRestaurantOrders,
+  createAccountTransaction,
+  createCreditAccount
+} from "@/lib/api"
+import { addNotification } from "@/lib/notifications"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -37,29 +44,28 @@ export default function BillingManager() {
     loadData()
     
     // Refresh every time component mounts (when switching tabs)
-    const interval = setInterval(loadData, 1000)
+    const interval = setInterval(loadData, 5000) // Reduced frequency to 5s
     return () => clearInterval(interval)
   }, [])
 
-  const loadData = () => {
-    const allBookings = getBookings()
-    console.log("All bookings:", allBookings)
-    
-    // Show bookings that are Confirmed and have room numbers
-    const confirmedBookings = allBookings.filter(b => 
-      b.status === "Confirmed" && b.roomNumber
-    )
-    console.log("Confirmed bookings with room numbers:", confirmedBookings)
-    setBookings(confirmedBookings)
+  const loadData = async () => {
+    try {
+      const allBookings = await fetchBookings()
+      console.log("📊 Billing - All bookings:", allBookings.length)
+      
+      // Show bookings that are "Confirmed" OR "Checked In" with room numbers
+      const activeBookings = allBookings.filter((b: any) => 
+        (b.status === "Confirmed" || b.status === "Checked In") && b.roomNumber
+      )
+      console.log("✅ Billing - Active bookings ready for checkout:", activeBookings.length)
+      console.log("Active bookings:", activeBookings.map((b: any) => `${b.guest} - Room ${b.roomNumber} - Status: ${b.status}`))
+      setBookings(activeBookings)
 
-    const savedOrders = localStorage.getItem("restaurant_orders")
-    if (savedOrders) {
-      const parsedOrders = JSON.parse(savedOrders)
-      console.log("Restaurant orders:", parsedOrders)
-      setOrders(parsedOrders)
-    } else {
-      console.log("No restaurant orders found")
-      setOrders([])
+      const allOrders = await fetchRestaurantOrders()
+      console.log("🍽️ Billing - All restaurant orders:", allOrders.length)
+      setOrders(allOrders)
+    } catch (error) {
+      console.error('❌ Billing - Failed to load data:', error)
     }
   }
 
@@ -72,11 +78,13 @@ export default function BillingManager() {
     // Get room charges
     const roomCharges = parseFloat(booking.price)
 
-    // Get restaurant orders for this room
+    // Get restaurant orders for this booking (by booking ID OR room number)
     const roomOrders = orders.filter(order => 
-      order.roomNumber === booking.roomNumber && 
+      (order.bookingId === booking.id || order.roomNumber === booking.roomNumber) && 
       order.status !== "cancelled"
     )
+    
+    console.log(`🍽️ Orders for ${booking.guest} (Room ${booking.roomNumber}):`, roomOrders.length, "orders found")
 
     const restaurantTotal = roomOrders.reduce((sum, order) => sum + order.total, 0)
 
@@ -166,117 +174,143 @@ Thank you for staying with us!
     link.click()
   }
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     if (!selectedBill) return
 
-    // Mark booking as checked out
-    const allBookings = getBookings()
-    const updatedBookings = allBookings.map(b => 
-      b.id === selectedBill.booking.id ? { ...b, status: "Checked Out" } : b
-    )
-    localStorage.setItem("hotel_bookings", JSON.stringify(updatedBookings))
-    
-    const accountTransactions = JSON.parse(localStorage.getItem("account_transactions") || "[]")
-    let transactionCount = 0
-    let paidAmount = 0
-    let creditAmount = 0
-    const paymentSummary: string[] = []
-    
-    // Add room booking income if paid
-    if (roomPaymentStatus === "paid") {
-      accountTransactions.unshift({
-        id: Date.now() + transactionCount++,
-        date: new Date().toISOString().split("T")[0],
-        type: "income",
-        category: "room_booking",
-        description: `Room ${selectedBill.booking.roomNumber} - ${selectedBill.booking.guest} (${selectedBill.numberOfNights} nights)`,
-        amount: selectedBill.roomCharges,
-        currency: "NPR",
-        paymentMethod: roomPaymentMethod
-      })
-      paidAmount += selectedBill.roomCharges
-      paymentSummary.push(`Room: NPR ${selectedBill.roomCharges.toFixed(2)} (${roomPaymentMethod.toUpperCase()})`)
-    } else {
-      creditAmount += selectedBill.roomCharges
-      paymentSummary.push(`Room: NPR ${selectedBill.roomCharges.toFixed(2)} (CREDIT)`)
-    }
-    
-    // Add restaurant income if any and if paid
-    if (selectedBill.restaurantTotal > 0) {
-      if (restaurantPaymentStatus === "paid") {
-        accountTransactions.unshift({
-          id: Date.now() + transactionCount++,
+    try {
+      // Mark booking as checked out
+      await updateBooking(selectedBill.booking.id, { status: "Checked Out" })
+      
+      let paidAmount = 0
+      let creditAmount = 0
+      const paymentSummary: string[] = []
+      
+      // Add room booking income if paid, or create credit account if credit
+      if (roomPaymentStatus === "paid") {
+        await createAccountTransaction({
           date: new Date().toISOString().split("T")[0],
           type: "income",
-          category: "restaurant",
-          description: `Restaurant orders - Room ${selectedBill.booking.roomNumber} - ${selectedBill.booking.guest}`,
-          amount: selectedBill.restaurantTotal,
+          category: "room_booking",
+          description: `Room ${selectedBill.booking.roomNumber} - ${selectedBill.booking.guest} (${selectedBill.numberOfNights} nights)`,
+          amount: selectedBill.roomCharges,
           currency: "NPR",
-          paymentMethod: restaurantPaymentMethod
+          paymentMethod: roomPaymentMethod
         })
-        paidAmount += selectedBill.restaurantTotal
-        paymentSummary.push(`Restaurant: NPR ${selectedBill.restaurantTotal.toFixed(2)} (${restaurantPaymentMethod.toUpperCase()})`)
+        paidAmount += selectedBill.roomCharges
+        paymentSummary.push(`Room: NPR ${selectedBill.roomCharges.toFixed(2)} (${roomPaymentMethod.toUpperCase()})`)
       } else {
-        creditAmount += selectedBill.restaurantTotal
-        paymentSummary.push(`Restaurant: NPR ${selectedBill.restaurantTotal.toFixed(2)} (CREDIT)`)
+        // Create credit account for room charges
+        creditAmount += selectedBill.roomCharges
+        paymentSummary.push(`Room: NPR ${selectedBill.roomCharges.toFixed(2)} (CREDIT)`)
       }
+      
+      // Add restaurant income if any and if paid, or add to credit
+      if (selectedBill.restaurantTotal > 0) {
+        if (restaurantPaymentStatus === "paid") {
+          await createAccountTransaction({
+            date: new Date().toISOString().split("T")[0],
+            type: "income",
+            category: "restaurant",
+            description: `Restaurant orders - Room ${selectedBill.booking.roomNumber} - ${selectedBill.booking.guest}`,
+            amount: selectedBill.restaurantTotal,
+            currency: "NPR",
+            paymentMethod: restaurantPaymentMethod
+          })
+          paidAmount += selectedBill.restaurantTotal
+          paymentSummary.push(`Restaurant: NPR ${selectedBill.restaurantTotal.toFixed(2)} (${restaurantPaymentMethod.toUpperCase()})`)
+        } else {
+          creditAmount += selectedBill.restaurantTotal
+          paymentSummary.push(`Restaurant: NPR ${selectedBill.restaurantTotal.toFixed(2)} (CREDIT)`)
+        }
+      }
+      
+      // Add taxes as income (split proportionally if mixed payment)
+      const taxTotal = selectedBill.serviceTax + selectedBill.vat
+      if (roomPaymentStatus === "paid" && restaurantPaymentStatus === "paid") {
+        // Both paid - record all taxes
+        await createAccountTransaction({
+          date: new Date().toISOString().split("T")[0],
+          type: "income",
+          category: "other",
+          description: `Service Charge & VAT - Room ${selectedBill.booking.roomNumber}`,
+          amount: taxTotal,
+          currency: "NPR",
+          paymentMethod: roomPaymentMethod
+        })
+        paidAmount += taxTotal
+      } else if (roomPaymentStatus === "credit" && restaurantPaymentStatus === "credit") {
+        // Both credit - no tax recorded
+        creditAmount += taxTotal
+      } else {
+        // Mixed - split taxes proportionally
+        const paidRatio = paidAmount / (selectedBill.roomCharges + selectedBill.restaurantTotal)
+        const taxPaid = taxTotal * paidRatio
+        await createAccountTransaction({
+          date: new Date().toISOString().split("T")[0],
+          type: "income",
+          category: "other",
+          description: `Service Charge & VAT (Partial) - Room ${selectedBill.booking.roomNumber}`,
+          amount: taxPaid,
+          currency: "NPR",
+          paymentMethod: roomPaymentStatus === "paid" ? roomPaymentMethod : restaurantPaymentMethod
+        })
+        paidAmount += taxPaid
+        creditAmount += taxTotal - taxPaid
+      }
+      
+      // CREATE CREDIT ACCOUNT if there's any credit amount
+      if (creditAmount > 0) {
+        const dueDate = new Date()
+        dueDate.setDate(dueDate.getDate() + 30) // 30 days credit period
+        
+        await createCreditAccount({
+          guestName: selectedBill.booking.guest,
+          guestContact: selectedBill.booking.phone || selectedBill.booking.email || "N/A",
+          guestEmail: selectedBill.booking.email || "",
+          creditAmount: creditAmount,
+          paidAmount: 0,
+          outstandingBalance: creditAmount,
+          creditDate: new Date().toISOString().split("T")[0],
+          dueDate: dueDate.toISOString().split("T")[0],
+          status: 'pending',
+          linkedBookingId: selectedBill.booking.id,
+          notes: `Checkout credit - Room: ${roomPaymentStatus === "credit" ? `NPR ${selectedBill.roomCharges.toFixed(2)}` : "Paid"}, Restaurant: ${restaurantPaymentStatus === "credit" && selectedBill.restaurantTotal > 0 ? `NPR ${selectedBill.restaurantTotal.toFixed(2)}` : "Paid"}, Taxes: NPR ${(taxTotal * (creditAmount / selectedBill.totalAmount)).toFixed(2)}`
+        })
+        
+        // Add notification for new credit account
+        addNotification(
+          "payment",
+          "New Credit Account",
+          `${selectedBill.booking.guest} - NPR ${creditAmount.toFixed(2)} due on ${dueDate.toISOString().split("T")[0]}`,
+          "medium",
+          "accounts"
+        )
+      }
+      
+      // Build alert message
+      let alertMessage = `✅ Guest checked out successfully!\n\n`
+      alertMessage += `Total Amount: NPR ${selectedBill.totalAmount.toFixed(2)}\n\n`
+      alertMessage += `--- Payment Breakdown ---\n`
+      paymentSummary.forEach(line => alertMessage += `${line}\n`)
+      alertMessage += `\n💰 Paid: NPR ${paidAmount.toFixed(2)}`
+      if (creditAmount > 0) {
+        alertMessage += `\n⏳ Credit: NPR ${creditAmount.toFixed(2)}`
+      }
+      if (paidAmount > 0) {
+        alertMessage += `\n\n✅ Transactions added to Accounts (AMS)`
+      }
+      if (creditAmount > 0) {
+        alertMessage += `\n💳 Credit account created in AMS → Credit Tracking`
+      }
+      
+      alert(alertMessage)
+      setShowPaymentDialog(false)
+      setShowBillDialog(false)
+      await loadData()
+    } catch (error) {
+      console.error('Failed to checkout:', error)
+      alert('Failed to complete checkout. Please try again.')
     }
-    
-    // Add taxes as income (split proportionally if mixed payment)
-    const taxTotal = selectedBill.serviceTax + selectedBill.vat
-    if (roomPaymentStatus === "paid" && restaurantPaymentStatus === "paid") {
-      // Both paid - record all taxes
-      accountTransactions.unshift({
-        id: Date.now() + transactionCount++,
-        date: new Date().toISOString().split("T")[0],
-        type: "income",
-        category: "other",
-        description: `Service Charge & VAT - Room ${selectedBill.booking.roomNumber}`,
-        amount: taxTotal,
-        currency: "NPR",
-        paymentMethod: roomPaymentMethod
-      })
-      paidAmount += taxTotal
-    } else if (roomPaymentStatus === "credit" && restaurantPaymentStatus === "credit") {
-      // Both credit - no tax recorded
-      creditAmount += taxTotal
-    } else {
-      // Mixed - split taxes proportionally
-      const paidRatio = paidAmount / (selectedBill.roomCharges + selectedBill.restaurantTotal)
-      const taxPaid = taxTotal * paidRatio
-      accountTransactions.unshift({
-        id: Date.now() + transactionCount++,
-        date: new Date().toISOString().split("T")[0],
-        type: "income",
-        category: "other",
-        description: `Service Charge & VAT (Partial) - Room ${selectedBill.booking.roomNumber}`,
-        amount: taxPaid,
-        currency: "NPR",
-        paymentMethod: roomPaymentStatus === "paid" ? roomPaymentMethod : restaurantPaymentMethod
-      })
-      paidAmount += taxPaid
-      creditAmount += taxTotal - taxPaid
-    }
-    
-    localStorage.setItem("account_transactions", JSON.stringify(accountTransactions))
-    
-    // Build alert message
-    let alertMessage = `✅ Guest checked out successfully!\n\n`
-    alertMessage += `Total Amount: NPR ${selectedBill.totalAmount.toFixed(2)}\n\n`
-    alertMessage += `--- Payment Breakdown ---\n`
-    paymentSummary.forEach(line => alertMessage += `${line}\n`)
-    alertMessage += `\n💰 Paid: NPR ${paidAmount.toFixed(2)}`
-    if (creditAmount > 0) {
-      alertMessage += `\n⏳ Credit: NPR ${creditAmount.toFixed(2)}`
-    }
-    if (paidAmount > 0) {
-      alertMessage += `\n\n✅ Transactions added to Accounts (AMS)`
-    }
-    
-    alert(alertMessage)
-    setShowPaymentDialog(false)
-    setShowBillDialog(false)
-    loadData()
   }
 
   return (
@@ -299,7 +333,7 @@ Thank you for staying with us!
                   <p className="text-sm text-yellow-800 mb-2">To see bookings here, you need:</p>
                   <ol className="text-sm text-yellow-800 list-decimal list-inside space-y-1 ml-2">
                     <li>Go to <span className="font-semibold">Bookings</span> page</li>
-                    <li>Create or edit a booking and set status to <span className="font-semibold">"Confirmed"</span></li>
+                    <li>Create or edit a booking and set status to <span className="font-semibold">"Confirmed"</span> or <span className="font-semibold">"Checked In"</span></li>
                     <li>Assign a <span className="font-semibold">room number</span> to the booking</li>
                     <li>Optionally, add restaurant orders via <span className="font-semibold">Restaurant (RMS)</span> linked to the room</li>
                     <li>Come back here to generate the complete bill with room + restaurant + taxes</li>

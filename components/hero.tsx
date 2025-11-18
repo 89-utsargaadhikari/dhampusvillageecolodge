@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react"
 import { ChevronRight } from "lucide-react"
-import { getHeroSettings, type HeroSettings } from "@/lib/storage"
+import { type HeroSettings } from "@/lib/storage"
+import { fetchHeroSettings } from "@/lib/api"
 
 export default function Hero() {
   const [settings, setSettings] = useState<HeroSettings>({
@@ -13,8 +14,17 @@ export default function Hero() {
   })
 
   useEffect(() => {
-    setSettings(getHeroSettings())
+    loadSettings()
   }, [])
+  
+  const loadSettings = async () => {
+    try {
+      const data = await fetchHeroSettings()
+      if (data) setSettings(data)
+    } catch (error) {
+      console.error('Failed to load hero settings:', error)
+    }
+  }
 
   return (
     <section id="home" className="relative h-screen flex items-center justify-center overflow-hidden">

@@ -3,7 +3,15 @@
 import { useEffect, useState } from "react"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts"
 import { Users, DollarSign, Calendar, TrendingUp, X } from "lucide-react"
-import { getBookings, getRooms, getRoomInventory, type Booking } from "@/lib/storage"
+import { type Booking } from "@/lib/storage"
+import { 
+  fetchBookings, 
+  fetchRooms,
+  fetchRoomInventory,
+  fetchRestaurantOrders,
+  fetchRestaurantMenu,
+  fetchAccountTransactions
+} from "@/lib/api"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 type StatType = "bookings" | "revenue" | "guests" | "occupancy" | null
@@ -26,81 +34,92 @@ export default function DashboardOverview() {
   const [rooms, setRooms] = useState<any[]>([])
 
   useEffect(() => {
-    const bookings = getBookings()
-    const roomsData = getRooms()
-    const inventory = getRoomInventory()
-
-    setAllBookings(bookings)
-    setRooms(roomsData)
-
-    // Calculate HMS stats
-    const totalBookings = bookings.length
-    const totalRevenue = bookings.reduce((sum, b) => sum + parseFloat(b.price || "0"), 0)
-    const totalGuests = bookings.reduce((sum, b) => {
-      const room = roomsData.find((r) => r.name === b.room)
-      return sum + (room?.capacity || 1)
-    }, 0)
-
-    // Calculate occupancy rate
-    const totalRooms = inventory.length || roomsData.reduce((sum, r) => sum + (r.roomNumbers?.length || 0), 0)
-    const confirmedBookings = bookings.filter((b) => b.status === "Confirmed").length
-    const occupancyRate = totalRooms > 0 ? Math.round((confirmedBookings / totalRooms) * 100) : 0
-
-    // Calculate RMS stats
-    const restaurantOrders = JSON.parse(localStorage.getItem("restaurant_orders") || "[]")
-    const restaurantRevenue = restaurantOrders.reduce((sum: number, order: any) => sum + order.total, 0)
-    
-    // Calculate inventory alerts (bar items only)
-    const menuItems = JSON.parse(localStorage.getItem("restaurant_menu") || "[]")
-    const lowStockItems = menuItems.filter((item: any) => item.category === "bar" && item.stock <= item.minStock).length
-
-    // Calculate AMS stats
-    const accountTransactions = JSON.parse(localStorage.getItem("account_transactions") || "[]")
-    const accountBalance = accountTransactions.reduce((sum: number, txn: any) => {
-      return sum + (txn.type === "income" ? txn.amount : -txn.amount)
-    }, 0)
-
-    setStats({
-      totalBookings,
-      totalRevenue,
-      totalGuests,
-      occupancyRate,
-      restaurantOrders: restaurantOrders.length,
-      restaurantRevenue,
-      lowStockItems,
-      accountBalance,
-    })
-
-    // Group bookings by month
-    const monthlyData: Record<string, { bookings: number; revenue: number }> = {}
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    
-    bookings.forEach((booking) => {
-      const date = new Date(booking.checkin)
-      const monthKey = months[date.getMonth()]
-      
-      if (!monthlyData[monthKey]) {
-        monthlyData[monthKey] = { bookings: 0, revenue: 0 }
-      }
-      
-      monthlyData[monthKey].bookings += 1
-      monthlyData[monthKey].revenue += parseFloat(booking.price || "0")
-    })
-
-    const chartData = months.map((month) => ({
-      month,
-      bookings: monthlyData[month]?.bookings || 0,
-      revenue: monthlyData[month]?.revenue || 0,
-    }))
-
-    setBookingData(chartData)
-
-    // Get recent bookings (last 5)
-    const recent = [...bookings]
-      .sort((a, b) => new Date(b.checkin).getTime() - new Date(a.checkin).getTime())
-      .slice(0, 5)
-    setRecentBookings(recent)
+    loadData()
   }, [])
+  
+  const loadData = async () => {
+    try {
+      const [bookings, roomsData, inventory, restaurantOrders, menuItems, accountTransactions] = await Promise.all([
+        fetchBookings(),
+        fetchRooms(),
+        fetchRoomInventory(),
+        fetchRestaurantOrders(),
+        fetchRestaurantMenu(),
+        fetchAccountTransactions()
+      ])
+
+      setAllBookings(bookings)
+      setRooms(roomsData)
+
+      // Calculate HMS stats
+      const totalBookings = bookings.length
+      const totalRevenue = bookings.reduce((sum: number, b: any) => sum + parseFloat(b.price || "0"), 0)
+      const totalGuests = bookings.reduce((sum: number, b: any) => {
+        const room = roomsData.find((r: any) => r.name === b.room)
+        return sum + (room?.capacity || 1)
+      }, 0)
+
+      // Calculate occupancy rate
+      const totalRooms = inventory.length || roomsData.reduce((sum: number, r: any) => sum + (r.roomNumbers?.length || 0), 0)
+      const confirmedBookings = bookings.filter((b: any) => b.status === "Confirmed").length
+      const occupancyRate = totalRooms > 0 ? Math.round((confirmedBookings / totalRooms) * 100) : 0
+
+      // Calculate RMS stats
+      const restaurantRevenue = restaurantOrders.reduce((sum: number, order: any) => sum + order.total, 0)
+      
+      // Calculate inventory alerts (bar items only)
+      // TODO: Implement proper inventory tracking
+      const lowStockItems = 0
+
+      // Calculate AMS stats
+      const accountBalance = accountTransactions.reduce((sum: number, txn: any) => {
+        return sum + (txn.type === "income" ? txn.amount : -txn.amount)
+      }, 0)
+
+      setStats({
+        totalBookings,
+        totalRevenue,
+        totalGuests,
+        occupancyRate,
+        restaurantOrders: restaurantOrders.length,
+        restaurantRevenue,
+        lowStockItems,
+        accountBalance,
+      })
+
+      // Group bookings by month
+      const monthlyData: Record<string, { bookings: number; revenue: number }> = {}
+      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+      
+      bookings.forEach((booking: any) => {
+        const date = new Date(booking.checkin)
+        const monthKey = months[date.getMonth()]
+        
+        if (!monthlyData[monthKey]) {
+          monthlyData[monthKey] = { bookings: 0, revenue: 0 }
+        }
+        
+        monthlyData[monthKey].bookings += 1
+        monthlyData[monthKey].revenue += parseFloat(booking.price || "0")
+      })
+
+      const chartData = months.map((month) => ({
+        month,
+        bookings: monthlyData[month]?.bookings || 0,
+        revenue: monthlyData[month]?.revenue || 0,
+      }))
+
+      setBookingData(chartData)
+
+      // Get recent bookings (last 5)
+      const recent = [...bookings]
+        .sort((a: any, b: any) => new Date(b.checkin).getTime() - new Date(a.checkin).getTime())
+        .slice(0, 5)
+      setRecentBookings(recent)
+    } catch (error) {
+      console.error('Failed to load dashboard data:', error)
+    }
+  }
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">

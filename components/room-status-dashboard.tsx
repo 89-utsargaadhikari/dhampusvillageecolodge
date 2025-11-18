@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react"
 import { Building2, BedDouble, Users, AlertCircle, CheckCircle, Clock, Wrench, Sparkles, Calendar } from "lucide-react"
-import { getRooms, getBookings, getRoomInventory, type Room, type Booking } from "@/lib/storage"
+import { type Room, type Booking } from "@/lib/storage"
+import { fetchRooms, fetchBookings, fetchRoomInventory } from "@/lib/api"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 
@@ -27,11 +28,25 @@ export default function RoomStatusDashboard() {
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split("T")[0])
 
   useEffect(() => {
-    const allRooms = getRooms()
-    const allBookings = getBookings()
-    const inventory = getRoomInventory()
-    setRooms(allRooms)
-    setBookings(allBookings)
+    loadData()
+    
+    // Auto-refresh every 5 seconds
+    const interval = setInterval(loadData, 5000)
+    return () => clearInterval(interval)
+  }, [selectedDate])
+  
+  const loadData = async () => {
+    try {
+      console.log('🔄 Room Status: Loading data from database...')
+      const [allRooms, allBookings, inventory] = await Promise.all([
+        fetchRooms(),
+        fetchBookings(),
+        fetchRoomInventory()
+      ])
+      console.log('✅ Loaded:', allRooms.length, 'room types,', allBookings.length, 'bookings,', inventory.length, 'room numbers')
+      console.log('📋 Bookings:', allBookings)
+      setRooms(allRooms)
+      setBookings(allBookings)
 
     // Data Consistency Check
     console.log("🔍 Running Data Consistency Check...")
@@ -141,7 +156,7 @@ export default function RoomStatusDashboard() {
       const activeBookings = allBookings.filter(
         (b) =>
           b.roomNumber === roomNumber &&
-          (b.status === "Confirmed" || b.status === "Pending")
+          (b.status === "Confirmed" || b.status === "Pending" || b.status === "Checked In")
       )
 
       for (const booking of activeBookings) {
@@ -208,7 +223,10 @@ export default function RoomStatusDashboard() {
     // Sort by room number
     details.sort((a, b) => a.roomNumber.localeCompare(b.roomNumber))
     setRoomDetails(details)
-  }, [selectedDate]) // Re-run when date changes
+    } catch (error) {
+      console.error('Failed to load room status data:', error)
+    }
+  }
 
   const getStatusColor = (status: RoomStatus) => {
     switch (status) {

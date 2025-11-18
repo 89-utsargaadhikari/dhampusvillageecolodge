@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react"
 import { Upload, X, Save } from "lucide-react"
-import { getHeroSettings, saveHeroSettings, convertImageToBase64, type HeroSettings } from "@/lib/storage"
+import { convertImageToBase64, type HeroSettings } from "@/lib/storage"
+import { fetchHeroSettings, updateHeroSettings } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -21,11 +22,21 @@ export default function HeroSettingsManager() {
   const [isSaved, setIsSaved] = useState(false)
 
   useEffect(() => {
-    const savedSettings = getHeroSettings()
-    setSettings(savedSettings)
-    setImagePreview(savedSettings.backgroundImage)
-    setVideoPreview(savedSettings.videoUrl || "")
+    loadSettings()
   }, [])
+  
+  const loadSettings = async () => {
+    try {
+      const data = await fetchHeroSettings()
+      if (data) {
+        setSettings(data)
+        setImagePreview(data.backgroundImage)
+        setVideoPreview(data.videoUrl || "")
+      }
+    } catch (error) {
+      console.error('Failed to load hero settings:', error)
+    }
+  }
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -55,10 +66,15 @@ export default function HeroSettingsManager() {
     }
   }
 
-  const handleSave = () => {
-    saveHeroSettings(settings)
-    setIsSaved(true)
-    setTimeout(() => setIsSaved(false), 3000)
+  const handleSave = async () => {
+    try {
+      await updateHeroSettings(settings)
+      setIsSaved(true)
+      setTimeout(() => setIsSaved(false), 3000)
+    } catch (error) {
+      console.error('Failed to save hero settings:', error)
+      alert('Failed to save settings')
+    }
   }
 
   return (

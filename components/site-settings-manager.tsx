@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react"
 import { Upload, X, Save } from "lucide-react"
-import { getSiteSettings, saveSiteSettings, convertImageToBase64, type SiteSettings } from "@/lib/storage"
+import { convertImageToBase64, type SiteSettings } from "@/lib/storage"
+import { fetchSiteSettings, updateSiteSettings } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -17,10 +18,20 @@ export default function SiteSettingsManager() {
   const [isSaved, setIsSaved] = useState(false)
 
   useEffect(() => {
-    const savedSettings = getSiteSettings()
-    setSettings(savedSettings)
-    setLogoPreview(savedSettings.logoImage)
+    loadSettings()
   }, [])
+  
+  const loadSettings = async () => {
+    try {
+      const data = await fetchSiteSettings()
+      if (data) {
+        setSettings(data)
+        setLogoPreview(data.logoImage)
+      }
+    } catch (error) {
+      console.error('Failed to load site settings:', error)
+    }
+  }
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -36,10 +47,15 @@ export default function SiteSettingsManager() {
     }
   }
 
-  const handleSave = () => {
-    saveSiteSettings(settings)
-    setIsSaved(true)
-    setTimeout(() => setIsSaved(false), 3000)
+  const handleSave = async () => {
+    try {
+      await updateSiteSettings(settings)
+      setIsSaved(true)
+      setTimeout(() => setIsSaved(false), 3000)
+    } catch (error) {
+      console.error('Failed to save site settings:', error)
+      alert('Failed to save settings')
+    }
   }
 
   return (

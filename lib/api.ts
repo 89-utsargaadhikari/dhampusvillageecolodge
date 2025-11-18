@@ -130,7 +130,11 @@ export const createGalleryItem = async (itemData: any) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(itemData)
   })
-  if (!res.ok) throw new Error('Failed to create gallery item')
+  if (!res.ok) {
+    const errorData = await res.json()
+    console.error('API Error Response:', errorData)
+    throw new Error(errorData.details || errorData.error || 'Failed to create gallery item')
+  }
   return res.json()
 }
 
@@ -178,4 +182,158 @@ export const updateSiteSettings = async (settings: any) => {
   return res.json()
 }
 
+// ============================================
+// RESTAURANT - MENU
+// ============================================
 
+export const fetchRestaurantMenu = async () => {
+  const res = await fetch('/api/restaurant/menu')
+  if (!res.ok) throw new Error('Failed to fetch menu')
+  return res.json()
+}
+
+export const createMenuItem = async (itemData: any) => {
+  const res = await fetch('/api/restaurant/menu', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(itemData)
+  })
+  if (!res.ok) throw new Error('Failed to create menu item')
+  return res.json()
+}
+
+export const updateMenuItem = async (id: number, itemData: any) => {
+  const res = await fetch(`/api/restaurant/menu/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(itemData)
+  })
+  if (!res.ok) throw new Error('Failed to update menu item')
+  return res.json()
+}
+
+export const deleteMenuItem = async (id: number) => {
+  const res = await fetch(`/api/restaurant/menu/${id}`, {
+    method: 'DELETE'
+  })
+  if (!res.ok) throw new Error('Failed to delete menu item')
+  return res.json()
+}
+
+// ============================================
+// RESTAURANT - ORDERS
+// ============================================
+
+export const fetchRestaurantOrders = async () => {
+  const res = await fetch('/api/restaurant/orders')
+  if (!res.ok) throw new Error('Failed to fetch orders')
+  return res.json()
+}
+
+export const createRestaurantOrder = async (orderData: any) => {
+  const res = await fetch('/api/restaurant/orders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(orderData)
+  })
+  if (!res.ok) {
+    const errorData = await res.json()
+    console.error('API Error Response:', errorData)
+    throw new Error(errorData.details || errorData.error || 'Failed to create order')
+  }
+  return res.json()
+}
+
+export const updateRestaurantOrder = async (id: number, orderData: any) => {
+  const res = await fetch(`/api/restaurant/orders/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(orderData)
+  })
+  if (!res.ok) throw new Error('Failed to update order')
+  return res.json()
+}
+
+export const deleteRestaurantOrder = async (id: number) => {
+  const res = await fetch(`/api/restaurant/orders/${id}`, {
+    method: 'DELETE'
+  })
+  if (!res.ok) throw new Error('Failed to delete order')
+  return res.json()
+}
+
+// ============================================
+// ACCOUNTS - TRANSACTIONS
+// ============================================
+
+export const fetchAccountTransactions = async () => {
+  const res = await fetch('/api/accounts/transactions')
+  if (!res.ok) throw new Error('Failed to fetch transactions')
+  return res.json()
+}
+
+export const createAccountTransaction = async (transactionData: any) => {
+  const res = await fetch('/api/accounts/transactions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(transactionData)
+  })
+  if (!res.ok) throw new Error('Failed to create transaction')
+  return res.json()
+}
+
+export const deleteAccountTransaction = async (id: number) => {
+  const res = await fetch(`/api/accounts/transactions/${id}`, {
+    method: 'DELETE'
+  })
+  if (!res.ok) throw new Error('Failed to delete transaction')
+  return res.json()
+}
+
+// ============================================
+// CREDIT ACCOUNTS
+// ============================================
+
+export const fetchCreditAccounts = async () => {
+  const res = await fetch('/api/credits')
+  if (!res.ok) throw new Error('Failed to fetch credit accounts')
+  return res.json()
+}
+
+export const createCreditAccount = async (creditData: any) => {
+  const res = await fetch('/api/credits', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(creditData)
+  })
+  if (!res.ok) throw new Error('Failed to create credit account')
+  return res.json()
+}
+
+export const updateCreditAccount = async (id: number, creditData: any) => {
+  const res = await fetch(`/api/credits/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(creditData)
+  })
+  if (!res.ok) throw new Error('Failed to update credit account')
+  return res.json()
+}
+
+export const deleteCreditAccount = async (id: number) => {
+  const res = await fetch(`/api/credits/${id}`, {
+    method: 'DELETE'
+  })
+  if (!res.ok) throw new Error('Failed to delete credit account')
+  return res.json()
+}
+
+export const addCreditPayment = async (paymentData: any) => {
+  const res = await fetch('/api/credits/payments', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(paymentData)
+  })
+  if (!res.ok) throw new Error('Failed to add payment')
+  return res.json()
+}

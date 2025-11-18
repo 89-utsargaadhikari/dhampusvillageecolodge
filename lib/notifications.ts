@@ -17,7 +17,36 @@ const STORAGE_KEY = "admin_notifications"
 export const getNotifications = (): Notification[] => {
   if (typeof window === "undefined") return []
   const stored = localStorage.getItem(STORAGE_KEY)
-  return stored ? JSON.parse(stored) : []
+  if (!stored) return []
+  
+  try {
+    const notifications = JSON.parse(stored)
+    
+    // FIX: Remove duplicate IDs and regenerate unique IDs for old notifications
+    const seenIds = new Set<string>()
+    const fixedNotifications = notifications.map((n: Notification) => {
+      // If ID already seen or doesn't have the new format (timestamp-random), regenerate it
+      if (seenIds.has(n.id) || !n.id.includes('-')) {
+        const newId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
+        seenIds.add(newId)
+        return { ...n, id: newId }
+      }
+      seenIds.add(n.id)
+      return n
+    })
+    
+    // Save fixed notifications back to localStorage
+    if (fixedNotifications.length !== notifications.length || 
+        fixedNotifications.some((n: Notification, i: number) => n.id !== notifications[i].id)) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(fixedNotifications))
+      console.log('✅ Fixed duplicate notification IDs')
+    }
+    
+    return fixedNotifications
+  } catch (error) {
+    console.error('Failed to parse notifications:', error)
+    return []
+  }
 }
 
 // Save notifications
@@ -35,8 +64,12 @@ export const addNotification = (
   link?: string
 ): void => {
   const notifications = getNotifications()
+  
+  // Generate UNIQUE ID using timestamp + random string
+  const uniqueId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
+  
   const newNotification: Notification = {
-    id: Date.now().toString(),
+    id: uniqueId,
     type,
     title,
     message,

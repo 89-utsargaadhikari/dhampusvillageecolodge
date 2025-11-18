@@ -1,8 +1,19 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Plus, Edit, Trash2, ShoppingCart, Package } from "lucide-react"
-import { getBookings } from "@/lib/storage"
+import { Plus, Edit, Trash2, ShoppingCart, Package, AlertCircle } from "lucide-react"
+import { fetchBookings } from "@/lib/api"
+import { 
+  fetchRestaurantMenu, 
+  createMenuItem, 
+  updateMenuItem, 
+  deleteMenuItem,
+  fetchRestaurantOrders,
+  createRestaurantOrder,
+  updateRestaurantOrder,
+  deleteRestaurantOrder
+} from "@/lib/api"
+import { addNotification } from "@/lib/notifications"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -14,10 +25,11 @@ import { Badge } from "@/components/ui/badge"
 interface MenuItem {
   id: number
   name: string
+  description?: string | null
   price: number
   category: string
-  stock: number
-  minStock: number
+  image?: string | null
+  available: boolean
 }
 
 interface Order {
@@ -44,91 +56,112 @@ export default function RestaurantManager() {
   const [bookings, setBookings] = useState<any[]>([])
   const [selectedItems, setSelectedItems] = useState<{ menuItemId: number; name: string; quantity: number; price: number }[]>([])
   const [taxPercentage, setTaxPercentage] = useState(13) // Default 13% VAT for Nepal
-  const [isRestockDialogOpen, setIsRestockDialogOpen] = useState(false)
-  const [restockingItem, setRestockingItem] = useState<MenuItem | null>(null)
 
-  // Load data from localStorage
+  // Load data from database
   useEffect(() => {
-    const savedMenu = localStorage.getItem("restaurant_menu")
-    const savedOrders = localStorage.getItem("restaurant_orders")
-    
-    if (savedMenu) setMenuItems(JSON.parse(savedMenu))
-    if (savedOrders) setOrders(JSON.parse(savedOrders))
-    
-    // Load active bookings
-    const allBookings = getBookings()
-    const activeBookings = allBookings.filter(b => 
-      b.status === "Confirmed" && b.roomNumber
-    )
-    setBookings(activeBookings)
+    loadData()
   }, [])
-
-  // Save to localStorage
-  const saveMenu = (items: MenuItem[]) => {
-    localStorage.setItem("restaurant_menu", JSON.stringify(items))
-    setMenuItems(items)
-  }
-
-  const saveOrders = (orders: Order[]) => {
-    localStorage.setItem("restaurant_orders", JSON.stringify(orders))
-    setOrders(orders)
+  
+  const loadData = async () => {
+    try {
+      const [menu, orders, allBookings] = await Promise.all([
+        fetchRestaurantMenu(),
+        fetchRestaurantOrders(),
+        fetchBookings()
+      ])
+      
+      setMenuItems(menu)
+      setOrders(orders)
+      
+      // ONLY "Checked In" guests can order from restaurant
+      const checkedInBookings = allBookings.filter((b: any) => 
+        b.status === "Checked In" && b.roomNumber
+      )
+      
+      console.log('🍽️ Restaurant System - Data Sync:')
+      console.log('  Total bookings:', allBookings.length)
+      console.log('  Checked In guests:', checkedInBookings.length)
+      console.log('  Available for orders:', checkedInBookings.map((b: any) => `${b.guest} - Room ${b.roomNumber}`))
+      
+      setBookings(checkedInBookings)
+    } catch (error) {
+      console.error('Failed to load data:', error)
+      alert('Failed to load restaurant data')
+    }
   }
 
   // Menu Management
-  const handleAddMenuItem = (item: Omit<MenuItem, "id">) => {
-    const newItem = { ...item, id: Date.now() }
-    saveMenu([...menuItems, newItem])
-    setIsDialogOpen(false)
-  }
-
-  const handleDeleteMenuItem = (id: number) => {
-    if (confirm("Delete this menu item?")) {
-      saveMenu(menuItems.filter(item => item.id !== id))
+  const handleAddMenuItem = async (item: Omit<MenuItem, "id">) => {
+    try {
+      await createMenuItem(item)
+      await loadData()
+      setIsDialogOpen(false)
+    } catch (error) {
+      console.error('Failed to add menu item:', error)
+      alert('Failed to add menu item')
     }
   }
 
-  const handleUpdateStock = (itemId: number, newStock: number) => {
-    const updated = menuItems.map(item => 
-      item.id === itemId ? { ...item, stock: newStock } : item
-    )
-    saveMenu(updated)
-    setIsRestockDialogOpen(false)
-    setRestockingItem(null)
+  const handleDeleteMenuItem = async (id: number) => {
+    if (confirm("Delete this menu item?")) {
+      try {
+        await deleteMenuItem(id)
+        await loadData()
+      } catch (error) {
+        console.error('Failed to delete menu item:', error)
+        alert('Failed to delete menu item')
+      }
+    }
   }
+
 
   // Order Management
-  const handleCreateOrder = (orderData: any) => {
-    const subtotal = orderData.items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0)
-    const tax = (subtotal * orderData.taxPercentage) / 100
-    const total = subtotal + tax
-    
-    const newOrder: Order = {
-      id: Date.now(),
-      orderNumber: `ORD-${Date.now()}`,
-      roomNumber: orderData.roomNumber,
-      guestName: orderData.guestName,
-      items: orderData.items,
-      subtotal,
-      tax,
-      taxPercentage: orderData.taxPercentage,
-      total,
-      status: "pending",
-      createdAt: new Date().toISOString()
-    }
-    
-    // Deduct from inventory (only for bar items)
-    orderData.items.forEach((orderItem: any) => {
-      const menuItem = menuItems.find(m => m.id === orderItem.menuItemId)
-      if (menuItem && menuItem.category === "bar") {
-        menuItem.stock -= orderItem.quantity
-        if (menuItem.stock < 0) menuItem.stock = 0
+  const handleCreateOrder = async (orderData: any) => {
+    try {
+      console.log('🔵 Frontend: Starting order creation', orderData)
+      
+      const subtotal = orderData.items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0)
+      const tax = (subtotal * orderData.taxPercentage) / 100
+      const total = subtotal + tax
+      
+      const orderPayload = {
+        orderNumber: `ORD-${Date.now()}`,
+        roomNumber: orderData.roomNumber,
+        guestName: orderData.guestName,
+        bookingId: bookings.find((b: any) => b.roomNumber === orderData.roomNumber)?.id || null,
+        items: orderData.items,
+        subtotal,
+        tax,
+        taxPercentage: orderData.taxPercentage,
+        total,
+        status: "pending"
       }
-    })
-    
-    saveMenu([...menuItems])
-    saveOrders([newOrder, ...orders])
-    setIsOrderDialogOpen(false)
-    setSelectedItems([])
+      
+      console.log('🔵 Frontend: Sending payload to API', orderPayload)
+      
+      const result = await createRestaurantOrder(orderPayload)
+      console.log('✅ Frontend: Order created successfully', result)
+      
+      // Add notification for new restaurant order
+      addNotification(
+        "order",
+        "New Restaurant Order",
+        `Order #${orderPayload.orderNumber} - Room ${orderPayload.roomNumber} (${orderPayload.guestName}) - NPR ${total.toFixed(2)}`,
+        "high",
+        "restaurant"
+      )
+      
+      // TODO: Inventory deduction will be implemented with the inventory management system
+      
+      await loadData()
+      setIsOrderDialogOpen(false)
+      setSelectedItems([])
+      alert('✅ Order created successfully!')
+    } catch (error: any) {
+      console.error('❌ Frontend: Failed to create order:', error)
+      console.error('Error details:', error.message)
+      alert(`❌ Failed to create order: ${error.message || 'Unknown error'}`)
+    }
   }
 
   return (
@@ -180,25 +213,16 @@ export default function RestaurantManager() {
                 <CardContent>
                   <div className="space-y-2">
                     <p className="text-2xl font-bold text-primary">NPR {item.price}</p>
-                    {item.category === "bar" && (
-                      <div className="flex justify-between text-sm">
-                        <span>Stock: {item.stock}</span>
-                        {item.stock <= item.minStock && (
-                          <Badge variant="destructive">Low Stock!</Badge>
-                        )}
-                      </div>
-                    )}
+                    <p className="text-sm text-gray-600">Category: {item.category}</p>
                     <div className="flex gap-2 pt-2">
-                      <Button size="sm" variant="outline" className="flex-1">
-                        <Edit className="w-4 h-4" />
-                      </Button>
                       <Button 
                         size="sm" 
                         variant="destructive" 
                         className="flex-1"
                         onClick={() => handleDeleteMenuItem(item.id)}
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-4 h-4 mr-1" />
+                        Delete
                       </Button>
                     </div>
                   </div>
@@ -278,11 +302,25 @@ export default function RestaurantManager() {
       {activeTab === "inventory" && (
         <div className="space-y-4">
           <div className="flex justify-between items-center">
-            <h3 className="text-lg font-semibold">Stock Levels (Bar Items Only)</h3>
+            <h3 className="text-lg font-semibold">Inventory Management</h3>
             <Badge className="bg-blue-600">
-              {menuItems.filter(i => i.category === "bar").length} Bar Items
+              {menuItems.length} Total Items
             </Badge>
           </div>
+          
+          <Card className="border-yellow-200 bg-yellow-50">
+            <CardContent className="pt-6">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-yellow-900">Inventory System Coming Soon</p>
+                  <p className="text-sm text-yellow-700 mt-1">
+                    Advanced inventory tracking with stock levels, alerts, and automated deductions will be available in the next update.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
           
           <div className="bg-white rounded-lg shadow overflow-x-auto">
             <table className="w-full">
@@ -290,40 +328,24 @@ export default function RestaurantManager() {
                 <tr>
                   <th className="px-6 py-3 text-left text-sm font-semibold">Item</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold">Category</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold">Current Stock</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold">Min Stock</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold">Price</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold">Status</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {menuItems.filter(item => item.category === "bar").map(item => (
+                {menuItems.map(item => (
                   <tr key={item.id} className="border-b hover:bg-gray-50">
                     <td className="px-6 py-4 font-medium">{item.name}</td>
                     <td className="px-6 py-4">
                       <Badge variant="outline">{item.category}</Badge>
                     </td>
-                    <td className="px-6 py-4 font-bold">{item.stock}</td>
-                    <td className="px-6 py-4">{item.minStock}</td>
+                    <td className="px-6 py-4 font-bold">NPR {item.price}</td>
                     <td className="px-6 py-4">
-                      {item.stock <= item.minStock ? (
-                        <Badge variant="destructive">Low Stock</Badge>
+                      {item.available ? (
+                        <Badge className="bg-green-600">Available</Badge>
                       ) : (
-                        <Badge className="bg-green-600">In Stock</Badge>
+                        <Badge variant="destructive">Unavailable</Badge>
                       )}
-                    </td>
-                    <td className="px-6 py-4">
-                      <Button 
-                        size="sm" 
-                        variant="outline"
-                        onClick={() => {
-                          setRestockingItem(item)
-                          setIsRestockDialogOpen(true)
-                        }}
-                      >
-                        <Package className="w-4 h-4 mr-2" />
-                        Update Stock
-                      </Button>
                     </td>
                   </tr>
                 ))}
@@ -347,8 +369,8 @@ export default function RestaurantManager() {
               name: formData.get("name") as string,
               price: parseFloat(formData.get("price") as string),
               category: category,
-              stock: category === "bar" ? parseInt(formData.get("stock") as string || "0") : 999999,
-              minStock: category === "bar" ? parseInt(formData.get("minStock") as string || "0") : 0
+              description: "",
+              available: true
             })
           }} className="space-y-4">
             <div className="space-y-2">
@@ -409,6 +431,11 @@ export default function RestaurantManager() {
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Create New Order</DialogTitle>
+            {bookings.length === 0 && (
+              <p className="text-sm text-orange-600 bg-orange-50 p-2 rounded mt-2">
+                ⚠️ No checked-in guests available. Please check in a guest from the Bookings page first.
+              </p>
+            )}
           </DialogHeader>
           <form onSubmit={(e) => {
             e.preventDefault()
@@ -450,11 +477,11 @@ export default function RestaurantManager() {
                     {bookings.length > 0 ? (
                       bookings.map((booking) => (
                         <SelectItem key={booking.id} value={booking.roomNumber!}>
-                          Room {booking.roomNumber}
+                          Room {booking.roomNumber} - {booking.guest}
                         </SelectItem>
                       ))
                     ) : (
-                      <SelectItem value="none" disabled>No active bookings</SelectItem>
+                      <SelectItem value="none" disabled>No checked-in guests available</SelectItem>
                     )}
                   </SelectContent>
                 </Select>
@@ -469,43 +496,46 @@ export default function RestaurantManager() {
             <div className="space-y-2">
               <Label>Add Items to Order</Label>
               <div className="border rounded-lg p-4 space-y-3 max-h-64 overflow-y-auto">
-                {menuItems.filter(item => item.stock > 0).map(item => (
-                  <div key={item.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                    <div className="flex-1">
-                      <p className="font-medium">{item.name}</p>
-                      <p className="text-sm text-gray-600">NPR {item.price} • Stock: {item.stock}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        min="0"
-                        max={item.stock}
-                        defaultValue="0"
-                        className="w-20"
-                        onChange={(e) => {
-                          const quantity = parseInt(e.target.value) || 0
-                          if (quantity > 0) {
-                            const existing = selectedItems.find(i => i.menuItemId === item.id)
-                            if (existing) {
-                              setSelectedItems(selectedItems.map(i => 
-                                i.menuItemId === item.id ? { ...i, quantity } : i
-                              ))
+                {menuItems.length === 0 ? (
+                  <p className="text-center text-gray-500 py-4">No menu items available. Please add menu items first.</p>
+                ) : (
+                  menuItems.filter(item => item.available).map(item => (
+                    <div key={item.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                      <div className="flex-1">
+                        <p className="font-medium">{item.name}</p>
+                        <p className="text-sm text-gray-600">NPR {item.price} • {item.category}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          min="0"
+                          defaultValue="0"
+                          className="w-20"
+                          onChange={(e) => {
+                            const quantity = parseInt(e.target.value) || 0
+                            if (quantity > 0) {
+                              const existing = selectedItems.find(i => i.menuItemId === item.id)
+                              if (existing) {
+                                setSelectedItems(selectedItems.map(i => 
+                                  i.menuItemId === item.id ? { ...i, quantity } : i
+                                ))
+                              } else {
+                                setSelectedItems([...selectedItems, {
+                                  menuItemId: item.id,
+                                  name: item.name,
+                                  quantity,
+                                  price: item.price
+                                }])
+                              }
                             } else {
-                              setSelectedItems([...selectedItems, {
-                                menuItemId: item.id,
-                                name: item.name,
-                                quantity,
-                                price: item.price
-                              }])
+                              setSelectedItems(selectedItems.filter(i => i.menuItemId !== item.id))
                             }
-                          } else {
-                            setSelectedItems(selectedItems.filter(i => i.menuItemId !== item.id))
-                          }
-                        }}
-                      />
+                          }}
+                        />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
 
@@ -564,104 +594,7 @@ export default function RestaurantManager() {
         </DialogContent>
       </Dialog>
 
-      {/* Update Stock Dialog */}
-      <Dialog open={isRestockDialogOpen} onOpenChange={setIsRestockDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Update Stock - {restockingItem?.name}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={(e) => {
-            e.preventDefault()
-            const formData = new FormData(e.currentTarget)
-            const newStock = parseInt(formData.get("newStock") as string)
-            if (restockingItem) {
-              handleUpdateStock(restockingItem.id, newStock)
-            }
-          }} className="space-y-4">
-            <div className="space-y-2">
-              <Label>Current Stock</Label>
-              <div className="p-3 bg-gray-100 rounded-lg">
-                <p className="text-2xl font-bold">{restockingItem?.stock} units</p>
-              </div>
-            </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="newStock">New Stock Quantity *</Label>
-              <Input 
-                id="newStock" 
-                name="newStock" 
-                type="number" 
-                required 
-                defaultValue={restockingItem?.stock}
-                min="0"
-              />
-              <p className="text-xs text-gray-500">Set the new total stock quantity</p>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Quick Actions</Label>
-              <div className="grid grid-cols-3 gap-2">
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => {
-                    const input = document.getElementById("newStock") as HTMLInputElement
-                    if (input && restockingItem) {
-                      input.value = (restockingItem.stock + 10).toString()
-                    }
-                  }}
-                >
-                  +10
-                </Button>
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => {
-                    const input = document.getElementById("newStock") as HTMLInputElement
-                    if (input && restockingItem) {
-                      input.value = (restockingItem.stock + 50).toString()
-                    }
-                  }}
-                >
-                  +50
-                </Button>
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => {
-                    const input = document.getElementById("newStock") as HTMLInputElement
-                    if (input && restockingItem) {
-                      input.value = (restockingItem.stock + 100).toString()
-                    }
-                  }}
-                >
-                  +100
-                </Button>
-              </div>
-            </div>
-
-            <div className="flex gap-2 pt-4">
-              <Button 
-                type="button" 
-                variant="outline" 
-                onClick={() => {
-                  setIsRestockDialogOpen(false)
-                  setRestockingItem(null)
-                }} 
-                className="flex-1"
-              >
-                Cancel
-              </Button>
-              <Button type="submit" className="flex-1">
-                Update Stock
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

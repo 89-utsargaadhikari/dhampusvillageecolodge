@@ -2,15 +2,25 @@
 
 import { useState, useEffect } from "react"
 import { X } from "lucide-react"
-import { getGallery, type GalleryItem } from "@/lib/storage"
+import { type GalleryItem } from "@/lib/storage"
+import { fetchGallery } from "@/lib/api"
 
 export default function Gallery() {
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
 
   useEffect(() => {
-    setGalleryItems(getGallery())
+    loadGallery()
   }, [])
+  
+  const loadGallery = async () => {
+    try {
+      const items = await fetchGallery()
+      setGalleryItems(items)
+    } catch (error) {
+      console.error('Failed to load gallery:', error)
+    }
+  }
 
   return (
     <section id="gallery" className="pt-20 pb-0 md:pt-32 bg-light">
@@ -29,8 +39,8 @@ export default function Gallery() {
               className="relative overflow-hidden rounded-xl group cursor-pointer aspect-square"
             >
               <img
-                src={item.src || "/placeholder.svg"}
-                alt={item.alt}
+                src={(item as any).image || item.src || "/placeholder.svg"}
+                alt={(item as any).title || item.alt || "Gallery image"}
                 className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
               />
               <div className="absolute inset-0 bg-black/40 group-hover:bg-black/60 transition-colors" />
@@ -56,7 +66,7 @@ export default function Gallery() {
               <X size={32} />
             </button>
             <img
-              src={galleryItems.find((item) => item.id === selectedId)?.src || "/placeholder.svg"}
+              src={(galleryItems.find((item) => item.id === selectedId) as any)?.image || galleryItems.find((item) => item.id === selectedId)?.src || "/placeholder.svg"}
               alt="Full size"
               className="max-w-3xl max-h-[80vh] object-contain rounded-xl"
               onClick={(e) => e.stopPropagation()}
