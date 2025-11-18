@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+// Credit management now fully database-driven
 import { addNotification } from "@/lib/notifications"
 import { 
   fetchAccountTransactions,
@@ -24,7 +25,7 @@ import {
 interface CreditAccount {
   id: number
   guestName: string
-  guestContact: string
+  guestPhone: string
   guestEmail: string | null
   creditAmount: number
   paidAmount: number
@@ -64,56 +65,50 @@ export default function AccountsManager() {
   useEffect(() => {
     loadData()
     
-    // Auto-refresh every 10 seconds for real-time updates
+    // Auto-refresh every 10 seconds
     const interval = setInterval(loadData, 10000)
     
-    // Listen for credit account updates
-    const handleCreditUpdate = () => loadData()
-    window.addEventListener("creditAccountsUpdated", handleCreditUpdate)
-    
-    // Listen for transaction imports
-    const handleTransactionsImported = () => {
-      console.log('📥 Transactions imported, refreshing AMS...')
-      loadData()
-    }
-    window.addEventListener("transactionsImported", handleTransactionsImported)
-    
-    // Listen for storage changes (cross-tab)
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'lastImport') {
-        console.log('📥 Import detected from another tab, refreshing...')
-        loadData()
-      }
-    }
-    window.addEventListener("storage", handleStorageChange)
+    // Listen for credit account updates & import events
+    const handleUpdate = () => loadData()
+    window.addEventListener("creditAccountsUpdated", handleUpdate)
+    window.addEventListener("transactionsImported", handleUpdate)
+    window.addEventListener("storage", handleUpdate)
     
     return () => {
       clearInterval(interval)
-      window.removeEventListener("creditAccountsUpdated", handleCreditUpdate)
-      window.removeEventListener("transactionsImported", handleTransactionsImported)
-      window.removeEventListener("storage", handleStorageChange)
+      window.removeEventListener("creditAccountsUpdated", handleUpdate)
+      window.removeEventListener("transactionsImported", handleUpdate)
+      window.removeEventListener("storage", handleUpdate)
     }
   }, [])
   
   const loadData = async () => {
     try {
-      const [txns, credits] = await Promise.all([
+      const [transactionsData, creditsData] = await Promise.all([
         fetchAccountTransactions(),
         fetchCreditAccounts()
       ])
-      setTransactions(txns)
-      setCreditAccounts(credits)
+      setTransactions(transactionsData)
+      setCreditAccounts(creditsData)
     } catch (error) {
       console.error('Failed to load data:', error)
-      alert('Failed to load account data')
     }
   }
 
   const handleAddTransaction = async (txn: Omit<Transaction, "id">) => {
     try {
-      await createAccountTransaction(txn)
-      await loadData()
+      await createAccountTransaction({
+        date: txn.date,
+        type: txn.type,
+        category: txn.category,
+        description: txn.description,
+        amount: txn.amount,
+        currency: txn.currency || 'NPR',
+        paymentMethod: txn.paymentMethod,
+        notes: txn.notes
+      })
       setIsDialogOpen(false)
+      loadData()
     } catch (error) {
       console.error('Failed to add transaction:', error)
       alert('Failed to add transaction')
@@ -124,7 +119,7 @@ export default function AccountsManager() {
     if (confirm("Delete this transaction?")) {
       try {
         await deleteAccountTransaction(id)
-        await loadData()
+        loadData()
       } catch (error) {
         console.error('Failed to delete transaction:', error)
         alert('Failed to delete transaction')
@@ -169,7 +164,7 @@ export default function AccountsManager() {
       await createCreditAccount(credit)
       await loadData()
       setIsCreditDialogOpen(false)
-      
+    
       // Add notification for overdue tracking
       const daysUntilDue = Math.ceil((new Date(credit.dueDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
       if (daysUntilDue <= 7) {
@@ -186,50 +181,7 @@ export default function AccountsManager() {
       alert('Failed to add credit account')
     }
   }
-
-  const handlePayment = async (accountId: number, amount: number, method: any, description: string) => {
-    try {
-      const account = creditAccounts.find(a => a.id === accountId)
-      if (!account) {
-        alert('Credit account not found')
-        return
-      }
-
-      // Add payment to credit account
-      await addCreditPayment({
-        creditAccountId: accountId,
-        amount,
-        paymentDate: new Date().toISOString().split("T")[0],
-        paymentMethod: method,
-        receivedBy: sessionStorage.getItem("admin_username") || "Admin",
-        notes: description
-      })
-      
-      // Create income transaction in AMS for payment received
-      await createAccountTransaction({
-        date: new Date().toISOString().split("T")[0],
-        type: "income",
-        category: "other",
-        description: `Credit Payment Received - ${account.guestName}${description ? ` (${description})` : ''}`,
-        amount: amount,
-        currency: "NPR",
-        paymentMethod: method,
-        referenceType: "manual",
-        notes: `Payment for credit account #${accountId}`
-      })
-      
-      console.log(`✅ Payment recorded: NPR ${amount} from ${account.guestName}`)
-      
-      await loadData()
-      setIsPaymentDialogOpen(false)
-      setSelectedAccount(null)
-      
-      alert(`✅ Payment Recorded!\n\nAmount: NPR ${amount}\nGuest: ${account.guestName}\nMethod: ${method.toUpperCase()}\n\n✓ Credit account updated\n✓ Income transaction created`)
-    } catch (error) {
-      console.error('Failed to add payment:', error)
-      alert('Failed to add payment')
-    }
-  }
+  
   
   const handleSendReminder = async (account: CreditAccount) => {
     try {
@@ -238,25 +190,24 @@ export default function AccountsManager() {
       })
       await loadData()
       
-      alert(`📧 Reminder sent to ${account.guestName}\n\nContact: ${account.guestContact}\nEmail: ${account.guestEmail || 'N/A'}\nBalance: NPR ${account.outstandingBalance}\n\n(In production, this will send actual SMS/Email)`)
+      alert(`📧 Reminder sent to ${account.guestName}\n\nPhone: ${account.guestPhone}\nEmail: ${account.guestEmail}\nBalance: NPR ${account.outstandingBalance}\n\n(In production, this will send actual SMS/Email)`)
     } catch (error) {
       console.error('Failed to send reminder:', error)
       alert('Failed to send reminder')
     }
   }
   
-  // Calculate credit stats
+  // Calculate credit stats from loaded data
   const outstandingAccounts = creditAccounts.filter(c => c.status !== 'paid')
   const overdueAccounts = creditAccounts.filter(c => {
-    const dueDate = new Date(c.dueDate)
-    const today = new Date()
-    return dueDate < today && c.status !== 'paid'
+    const isOverdue = new Date(c.dueDate) < new Date()
+    return c.status !== 'paid' && isOverdue
   })
-  const totalOutstanding = outstandingAccounts.reduce((sum, c) => sum + c.outstandingBalance, 0)
+  const totalOutstanding = creditAccounts.reduce((sum, c) => sum + c.outstandingBalance, 0)
   const totalOverdue = overdueAccounts.reduce((sum, c) => sum + c.outstandingBalance, 0)
-  const totalCollected = creditAccounts.reduce((sum, c) => sum + c.paidAmount, 0)
   const totalCredit = creditAccounts.reduce((sum, c) => sum + c.creditAmount, 0)
-  const collectionRate = totalCredit > 0 ? ((totalCollected / totalCredit) * 100).toFixed(1) : "0"
+  const totalCollected = creditAccounts.reduce((sum, c) => sum + c.paidAmount, 0)
+  const collectionRate = totalCredit > 0 ? (totalCollected / totalCredit) * 100 : 0
   
   const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
 
@@ -267,13 +218,6 @@ export default function AccountsManager() {
         <div className="flex gap-2">
           {activeTab === "transactions" && (
             <>
-            <Button
-              variant="outline"
-              onClick={() => window.open('/admin/import-transactions', '_blank')}
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Import Excel
-            </Button>
               <Button variant="outline" onClick={handleExportExcel}>
                 <Download className="w-4 h-4 mr-2" />
                 Export Excel
@@ -437,7 +381,7 @@ export default function AccountsManager() {
               </CardHeader>
               <CardContent>
                 <p className="text-2xl font-bold text-blue-900">NPR {totalOutstanding.toLocaleString()}</p>
-                <p className="text-xs text-blue-600 mt-1">{outstandingAccounts.length} accounts</p>
+                <p className="text-xs text-blue-600 mt-1">{creditAccounts.filter(a => a.outstandingBalance > 0).length} accounts</p>
               </CardContent>
             </Card>
             
@@ -459,8 +403,8 @@ export default function AccountsManager() {
                 <CardTitle className="text-sm font-medium text-green-700">Collection Rate</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-2xl font-bold text-green-900">{collectionRate}%</p>
-                <p className="text-xs text-green-600 mt-1">{creditAccounts.filter(c => c.status === 'paid').length} of {creditAccounts.length} paid</p>
+                <p className="text-2xl font-bold text-green-900">{collectionRate.toFixed(1)}%</p>
+                <p className="text-xs text-green-600 mt-1">{creditAccounts.filter(a => a.status === 'paid').length} of {creditAccounts.length} paid</p>
               </CardContent>
             </Card>
             
@@ -551,7 +495,7 @@ export default function AccountsManager() {
                               )}
                             </td>
                             <td className="px-4 py-3 text-sm">
-                              <div>{account.guestContact}</div>
+                              <div>{account.guestPhone}</div>
                               <div className="text-xs text-gray-500">{account.guestEmail}</div>
                             </td>
                             <td className="px-4 py-3 font-semibold">NPR {account.creditAmount.toLocaleString()}</td>
@@ -639,7 +583,7 @@ export default function AccountsManager() {
                 </div>
                 <div>
                   <p className="text-gray-600">Success Rate</p>
-                  <p className="text-lg font-bold text-blue-600">{collectionRate}%</p>
+                  <p className="text-lg font-bold text-blue-600">{collectionRate.toFixed(1)}%</p>
                 </div>
               </div>
             </CardContent>
@@ -767,7 +711,7 @@ export default function AccountsManager() {
               guestName: formData.get("guestName") as string,
               guestEmail: formData.get("guestEmail") as string,
               guestPhone: formData.get("guestPhone") as string,
-              totalAmount: parseFloat(formData.get("totalAmount") as string),
+              creditAmount: parseFloat(formData.get("creditAmount") as string),
               paidAmount: parseFloat(formData.get("paidAmount") as string) || 0,
               creditDate: formData.get("creditDate") as string,
               dueDate: formData.get("dueDate") as string,
@@ -793,8 +737,8 @@ export default function AccountsManager() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="totalAmount">Total Amount (NPR) *</Label>
-                <Input id="totalAmount" name="totalAmount" type="number" step="0.01" required />
+                <Label htmlFor="creditAmount">Total Amount (NPR) *</Label>
+                <Input id="creditAmount" name="creditAmount" type="number" step="0.01" required />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="paidAmount">Paid Amount (NPR)</Label>
@@ -879,11 +823,11 @@ export default function AccountsManager() {
               }} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="amount">Payment Amount (NPR) *</Label>
-                  <Input 
-                    id="amount" 
-                    name="amount" 
-                    type="number" 
-                    step="0.01" 
+                  <Input
+                    id="amount"
+                    name="amount"
+                    type="number"
+                    step="0.01"
                     max={selectedAccount.outstandingBalance}
                     required 
                     placeholder={`Max: ${selectedAccount.outstandingBalance}`}
@@ -977,7 +921,7 @@ export default function AccountsManager() {
                     </div>
                     <div>
                       <p className="text-gray-600">Contact</p>
-                      <p className="font-semibold">{selectedAccount.guestContact}</p>
+                      <p className="font-semibold">{selectedAccount.guestPhone}</p>
                       <p className="text-xs text-gray-500">{selectedAccount.guestEmail}</p>
                     </div>
                     <div>
@@ -1006,62 +950,39 @@ export default function AccountsManager() {
                 </CardContent>
               </Card>
 
-              {/* Payment History */}
+              {/* Transaction List */}
               <div className="space-y-2">
-                <h4 className="font-semibold">Payment History</h4>
+                <h4 className="font-semibold">Transaction History</h4>
                 <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {/* Initial Credit */}
-                  <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                    <div className="mt-1 w-2 h-2 rounded-full bg-blue-500" />
-                    <div className="flex-1">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="font-medium text-sm">Credit Given</p>
-                          <p className="text-xs text-gray-500">{new Date(selectedAccount.creditDate).toLocaleDateString()}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-bold text-blue-600">
-                            NPR {selectedAccount.creditAmount.toLocaleString()}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Payments */}
-                  {selectedAccount.payments && selectedAccount.payments.length > 0 ? (
-                    selectedAccount.payments.map((payment: any) => (
-                      <div key={payment.id} className="flex items-start gap-3 p-3 bg-green-50 rounded-lg border border-green-200">
-                        <div className="mt-1 w-2 h-2 rounded-full bg-green-500" />
-                        <div className="flex-1">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <p className="font-medium text-sm">Payment Received</p>
-                              <p className="text-xs text-gray-500">{new Date(payment.paymentDate).toLocaleDateString()}</p>
-                              {payment.receivedBy && (
-                                <p className="text-xs text-gray-500">Received by: {payment.receivedBy}</p>
-                              )}
-                              {payment.notes && (
-                                <p className="text-xs text-gray-600 mt-1">{payment.notes}</p>
-                              )}
-                            </div>
-                            <div className="text-right">
-                              <p className="font-bold text-green-600">
-                                +NPR {payment.amount.toLocaleString()}
-                              </p>
-                              {payment.paymentMethod && (
-                                <Badge variant="outline" className="text-xs mt-1">{payment.paymentMethod.toUpperCase()}</Badge>
-                              )}
-                            </div>
+                  {selectedAccount.transactions.map(txn => (
+                    <div key={txn.id} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                      <div className={`mt-1 w-2 h-2 rounded-full ${
+                        txn.type === "credit_given" ? "bg-blue-500" :
+                        txn.type === "payment_received" ? "bg-green-500" : "bg-gray-500"
+                      }`} />
+                      <div className="flex-1">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-medium text-sm">{txn.description}</p>
+                            <p className="text-xs text-gray-500">{new Date(txn.date).toLocaleDateString()}</p>
+                            {txn.receivedBy && (
+                              <p className="text-xs text-gray-500">Received by: {txn.receivedBy}</p>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <p className={`font-bold ${
+                              txn.type === "payment_received" ? "text-green-600" : ""
+                            }`}>
+                              {txn.type === "payment_received" ? "+" : ""}NPR {txn.amount.toLocaleString()}
+                            </p>
+                            {txn.paymentMethod && (
+                              <Badge variant="outline" className="text-xs">{txn.paymentMethod}</Badge>
+                            )}
                           </div>
                         </div>
                       </div>
-                    ))
-                  ) : (
-                    <div className="text-center py-4 text-sm text-gray-500">
-                      No payments received yet
                     </div>
-                  )}
+                  ))}
                 </div>
               </div>
 

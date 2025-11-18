@@ -130,11 +130,7 @@ export const createGalleryItem = async (itemData: any) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(itemData)
   })
-  if (!res.ok) {
-    const errorData = await res.json()
-    console.error('API Error Response:', errorData)
-    throw new Error(errorData.details || errorData.error || 'Failed to create gallery item')
-  }
+  if (!res.ok) throw new Error('Failed to create gallery item')
   return res.json()
 }
 
@@ -183,7 +179,7 @@ export const updateSiteSettings = async (settings: any) => {
 }
 
 // ============================================
-// RESTAURANT - MENU
+// RESTAURANT
 // ============================================
 
 export const fetchRestaurantMenu = async () => {
@@ -220,10 +216,6 @@ export const deleteMenuItem = async (id: number) => {
   return res.json()
 }
 
-// ============================================
-// RESTAURANT - ORDERS
-// ============================================
-
 export const fetchRestaurantOrders = async () => {
   const res = await fetch('/api/restaurant/orders')
   if (!res.ok) throw new Error('Failed to fetch orders')
@@ -237,9 +229,9 @@ export const createRestaurantOrder = async (orderData: any) => {
     body: JSON.stringify(orderData)
   })
   if (!res.ok) {
-    const errorData = await res.json()
-    console.error('API Error Response:', errorData)
-    throw new Error(errorData.details || errorData.error || 'Failed to create order')
+    const errorText = await res.text()
+    console.error('API Error Response:', errorText)
+    throw new Error(`Failed to create order: ${errorText}`)
   }
   return res.json()
 }
@@ -263,7 +255,7 @@ export const deleteRestaurantOrder = async (id: number) => {
 }
 
 // ============================================
-// ACCOUNTS - TRANSACTIONS
+// ACCOUNTS (AMS)
 // ============================================
 
 export const fetchAccountTransactions = async () => {
@@ -337,3 +329,5 @@ export const addCreditPayment = async (paymentData: any) => {
   if (!res.ok) throw new Error('Failed to add payment')
   return res.json()
 }
+
+

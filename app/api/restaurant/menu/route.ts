@@ -1,43 +1,41 @@
-import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
 
 export async function GET() {
   try {
     const menuItems = await prisma.restaurantMenuItem.findMany({
-      orderBy: { name: 'asc' }
+      orderBy: {
+        createdAt: 'desc'
+      }
     })
     return NextResponse.json(menuItems)
   } catch (error) {
-    console.error('Failed to fetch menu:', error)
-    return NextResponse.json({ error: 'Failed to fetch menu' }, { status: 500 })
+    console.error('Failed to fetch menu items:', error)
+    return NextResponse.json({ error: 'Failed to fetch menu items' }, { status: 500 })
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    console.log('📝 Creating menu item:', body)
-    
+    console.log('Creating menu item with data:', body)
+
     const menuItem = await prisma.restaurantMenuItem.create({
       data: {
         name: body.name,
-        description: body.description || null,
-        price: parseFloat(body.price),
+        description: body.description || '',
+        price: body.price,
         category: body.category,
-        image: body.image || null,
-        available: body.available !== undefined ? body.available : true,
+        image: body.image || '',
+        available: body.available !== undefined ? body.available : true
       }
     })
     
-    console.log('✅ Menu item created:', menuItem)
+    console.log('Menu item created:', menuItem)
     return NextResponse.json(menuItem)
-  } catch (error: any) {
-    console.error('❌ Failed to create menu item:', error)
-    console.error('Error details:', error.message)
-    return NextResponse.json({ 
-      error: 'Failed to create menu item', 
-      details: error.message 
-    }, { status: 500 })
+  } catch (error) {
+    console.error('Failed to create menu item:', error)
+    return NextResponse.json({ error: 'Failed to create menu item', details: error }, { status: 500 })
   }
 }
 

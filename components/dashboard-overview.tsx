@@ -6,15 +6,14 @@ import { Users, DollarSign, Calendar, TrendingUp, X } from "lucide-react"
 import { type Booking } from "@/lib/storage"
 import { 
   fetchBookings, 
-  fetchRooms,
+  fetchRooms, 
   fetchRoomInventory,
   fetchRestaurantOrders,
-  fetchRestaurantMenu,
   fetchAccountTransactions
 } from "@/lib/api"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
-type StatType = "bookings" | "revenue" | "guests" | "occupancy" | null
+type StatType = "bookings" | "revenue" | "guests" | "occupancy" | "restaurant" | "accounts" | null
 
 export default function DashboardOverview() {
   const [stats, setStats] = useState({
@@ -33,23 +32,31 @@ export default function DashboardOverview() {
   const [selectedStat, setSelectedStat] = useState<StatType>(null)
   const [rooms, setRooms] = useState<any[]>([])
 
+  const [restaurantOrders, setRestaurantOrders] = useState<any[]>([])
+  const [accountTransactions, setAccountTransactions] = useState<any[]>([])
+
   useEffect(() => {
     loadData()
+    
+    // Auto-refresh every 30 seconds
+    const interval = setInterval(loadData, 30000)
+    return () => clearInterval(interval)
   }, [])
-  
+
   const loadData = async () => {
     try {
-      const [bookings, roomsData, inventory, restaurantOrders, menuItems, accountTransactions] = await Promise.all([
+      const [bookings, roomsData, inventory, orders, transactions] = await Promise.all([
         fetchBookings(),
         fetchRooms(),
         fetchRoomInventory(),
         fetchRestaurantOrders(),
-        fetchRestaurantMenu(),
         fetchAccountTransactions()
       ])
 
       setAllBookings(bookings)
       setRooms(roomsData)
+      setRestaurantOrders(orders)
+      setAccountTransactions(transactions)
 
       // Calculate HMS stats
       const totalBookings = bookings.length
@@ -62,17 +69,14 @@ export default function DashboardOverview() {
       // Calculate occupancy rate
       const totalRooms = inventory.length || roomsData.reduce((sum: number, r: any) => sum + (r.roomNumbers?.length || 0), 0)
       const confirmedBookings = bookings.filter((b: any) => b.status === "Confirmed").length
-      const occupancyRate = totalRooms > 0 ? Math.round((confirmedBookings / totalRooms) * 100) : 0
+    const occupancyRate = totalRooms > 0 ? Math.round((confirmedBookings / totalRooms) * 100) : 0
 
       // Calculate RMS stats
-      const restaurantRevenue = restaurantOrders.reduce((sum: number, order: any) => sum + order.total, 0)
-      
-      // Calculate inventory alerts (bar items only)
-      // TODO: Implement proper inventory tracking
-      const lowStockItems = 0
+      const restaurantRevenue = orders.reduce((sum: number, order: any) => sum + order.total, 0)
+      const lowStockItems = 0 // Inventory system to be implemented
 
       // Calculate AMS stats
-      const accountBalance = accountTransactions.reduce((sum: number, txn: any) => {
+      const accountBalance = transactions.reduce((sum: number, txn: any) => {
         return sum + (txn.type === "income" ? txn.amount : -txn.amount)
       }, 0)
 
@@ -81,7 +85,7 @@ export default function DashboardOverview() {
         totalRevenue,
         totalGuests,
         occupancyRate,
-        restaurantOrders: restaurantOrders.length,
+        restaurantOrders: orders.length,
         restaurantRevenue,
         lowStockItems,
         accountBalance,
@@ -113,7 +117,7 @@ export default function DashboardOverview() {
 
       // Get recent bookings (last 5)
       const recent = [...bookings]
-        .sort((a: any, b: any) => new Date(b.checkin).getTime() - new Date(a.checkin).getTime())
+        .sort((a, b) => new Date(b.checkin).getTime() - new Date(a.checkin).getTime())
         .slice(0, 5)
       setRecentBookings(recent)
     } catch (error) {
@@ -175,35 +179,29 @@ export default function DashboardOverview() {
         </div>
       </div>
 
-      {/* RMS & AMS Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white rounded-lg p-6 shadow border-l-4 border-l-yellow-500">
+      {/* RMS & AMS Quick Stats - Now Clickable! */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <button
+          onClick={() => setSelectedStat("restaurant")}
+          className="bg-white rounded-lg p-6 shadow border-l-4 border-l-yellow-500 hover:shadow-lg transition-shadow cursor-pointer text-left w-full"
+        >
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-500 text-sm mb-1">Restaurant Orders (RMS)</p>
               <p className="text-2xl font-bold text-gray-900">{stats.restaurantOrders}</p>
               <p className="text-sm text-green-600 mt-1">NPR {stats.restaurantRevenue.toLocaleString()}</p>
+              <p className="text-xs text-gray-400 mt-1">Click for details</p>
             </div>
             <div className="bg-yellow-100 text-yellow-600 p-3 rounded-lg">
               🍽️
             </div>
           </div>
-        </div>
+        </button>
 
-        <div className="bg-white rounded-lg p-6 shadow border-l-4 border-l-red-500">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-500 text-sm mb-1">Low Stock Alerts</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.lowStockItems}</p>
-              <p className="text-xs text-gray-500 mt-1">Items need restocking</p>
-            </div>
-            <div className="bg-red-100 text-red-600 p-3 rounded-lg">
-              ⚠️
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg p-6 shadow border-l-4 border-l-blue-500">
+        <button
+          onClick={() => setSelectedStat("accounts")}
+          className="bg-white rounded-lg p-6 shadow border-l-4 border-l-blue-500 hover:shadow-lg transition-shadow cursor-pointer text-left w-full"
+        >
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-500 text-sm mb-1">Account Balance (AMS)</p>
@@ -211,12 +209,13 @@ export default function DashboardOverview() {
                 NPR {stats.accountBalance.toLocaleString()}
               </p>
               <p className="text-xs text-gray-500 mt-1">Total profit/loss</p>
+              <p className="text-xs text-gray-400 mt-1">Click for breakdown</p>
             </div>
             <div className="bg-blue-100 text-blue-600 p-3 rounded-lg">
               💰
             </div>
           </div>
-        </div>
+        </button>
       </div>
 
       {/* Charts */}
@@ -304,10 +303,12 @@ export default function DashboardOverview() {
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {selectedStat === "bookings" && "All Bookings Breakdown"}
-              {selectedStat === "revenue" && "Revenue Breakdown"}
-              {selectedStat === "guests" && "Guest Count Breakdown"}
-              {selectedStat === "occupancy" && "Occupancy Details"}
+              {selectedStat === "bookings" && "📅 All Bookings Breakdown"}
+              {selectedStat === "revenue" && "💰 Revenue Breakdown"}
+              {selectedStat === "guests" && "👥 Guest Count Breakdown"}
+              {selectedStat === "occupancy" && "📊 Occupancy Details"}
+              {selectedStat === "restaurant" && "🍽️ Restaurant Orders Breakdown"}
+              {selectedStat === "accounts" && "💳 Accounts Breakdown"}
             </DialogTitle>
           </DialogHeader>
 
@@ -328,7 +329,7 @@ export default function DashboardOverview() {
                           <p className="text-xs text-gray-500">{booking.checkin} to {booking.checkout}</p>
                         </div>
                         <div className="text-right">
-                          <p className="font-bold text-green-600">${booking.price}</p>
+                          <p className="font-bold text-green-600">NPR {parseFloat(booking.price || "0").toLocaleString()}</p>
                           <span
                             className={`inline-block px-2 py-1 rounded-full text-xs font-semibold mt-1 ${
                               booking.status === "Confirmed"
@@ -354,7 +355,7 @@ export default function DashboardOverview() {
             {selectedStat === "revenue" && (
               <div>
                 <p className="text-sm text-gray-600 mb-4">
-                  Total Revenue: <span className="font-bold text-green-600 text-xl">${stats.totalRevenue.toLocaleString()}</span>
+                  Total Revenue: <span className="font-bold text-green-600 text-xl">NPR {stats.totalRevenue.toLocaleString()}</span>
                 </p>
                 <div className="space-y-2">
                   {allBookings.map((booking, i) => (
@@ -365,7 +366,7 @@ export default function DashboardOverview() {
                         <p className="text-xs text-gray-500">{booking.checkin} to {booking.checkout}</p>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold text-green-600 text-lg">${parseFloat(booking.price || "0").toLocaleString()}</p>
+                        <p className="font-bold text-green-600 text-lg">NPR {parseFloat(booking.price || "0").toLocaleString()}</p>
                         <p className="text-xs text-gray-500">{booking.status}</p>
                       </div>
                     </div>
@@ -373,7 +374,7 @@ export default function DashboardOverview() {
                   <div className="border-t-2 pt-4 mt-4">
                     <div className="flex justify-between items-center">
                       <p className="font-bold text-gray-900">TOTAL</p>
-                      <p className="font-bold text-green-600 text-2xl">${stats.totalRevenue.toLocaleString()}</p>
+                      <p className="font-bold text-green-600 text-2xl">NPR {stats.totalRevenue.toLocaleString()}</p>
                     </div>
                   </div>
                 </div>
@@ -430,13 +431,18 @@ export default function DashboardOverview() {
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                     <p className="text-sm text-gray-600">Total Rooms</p>
                     <p className="text-2xl font-bold text-blue-600">
-                      {getRoomInventory().length || rooms.reduce((sum, r) => sum + (r.roomNumbers?.length || 0), 0)}
+                      {rooms.reduce((sum: number, r: any) => {
+                        if (typeof r.roomNumbers === 'string') {
+                          return sum + (r.roomNumbers.split(',').filter((n: string) => n.trim()).length || 0)
+                        }
+                        return sum + (r.roomNumbers?.length || 0)
+                      }, 0)}
                     </p>
                   </div>
                 </div>
                 <div className="space-y-2">
                   <p className="font-semibold text-gray-900 mb-2">Status Breakdown:</p>
-                  {["Confirmed", "Pending", "Checked Out", "Cancelled"].map((status) => {
+                  {["Confirmed", "Checked In", "Pending", "Checked Out", "Cancelled"].map((status) => {
                     const count = allBookings.filter((b) => b.status === status).length
                     return (
                       <div key={status} className="border rounded-lg p-3 flex justify-between items-center">
@@ -446,6 +452,161 @@ export default function DashboardOverview() {
                     )
                   })}
                 </div>
+              </div>
+            )}
+
+            {/* RESTAURANT */}
+            {selectedStat === "restaurant" && (
+              <div>
+                <p className="text-sm text-gray-600 mb-4">
+                  Total Orders: <span className="font-bold text-yellow-600 text-xl">{restaurantOrders.length}</span>
+                  {' | '}
+                  Total Revenue: <span className="font-bold text-green-600 text-xl">NPR {stats.restaurantRevenue.toLocaleString()}</span>
+                </p>
+                
+                {restaurantOrders.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <p className="mb-2">🍽️ No restaurant orders yet</p>
+                    <p className="text-sm">Orders will appear here once guests place orders from the Restaurant Manager</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {restaurantOrders
+                      .sort((a, b) => new Date(b.orderDate).getTime() - new Date(a.orderDate).getTime())
+                      .map((order, i) => (
+                        <div key={i} className="border rounded-lg p-4 hover:bg-gray-50">
+                          <div className="flex justify-between items-start mb-2">
+                            <div>
+                              <p className="font-semibold">Order #{order.orderNumber}</p>
+                              <p className="text-sm text-gray-600">Room {order.roomNumber} - {order.guestName}</p>
+                              <p className="text-xs text-gray-500">
+                                {new Date(order.orderDate).toLocaleDateString()} at{' '}
+                                {new Date(order.orderDate).toLocaleTimeString()}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-bold text-green-600 text-lg">NPR {order.total.toLocaleString()}</p>
+                              <p className="text-xs text-gray-500">
+                                Subtotal: NPR {order.subtotal.toFixed(2)}<br/>
+                                Tax: NPR {order.tax.toFixed(2)}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="border-t pt-2 mt-2">
+                            <p className="text-xs font-semibold text-gray-700 mb-1">Items:</p>
+                            {order.items.map((item: any, idx: number) => (
+                              <p key={idx} className="text-xs text-gray-600">
+                                • {item.name} x{item.quantity} @ NPR {item.price} = NPR {item.subtotal}
+                              </p>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    <div className="border-t-2 pt-4 mt-4">
+                      <div className="flex justify-between items-center">
+                        <p className="font-bold text-gray-900">TOTAL REVENUE</p>
+                        <p className="font-bold text-green-600 text-2xl">NPR {stats.restaurantRevenue.toLocaleString()}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ACCOUNTS */}
+            {selectedStat === "accounts" && (
+              <div>
+                <p className="text-sm text-gray-600 mb-4">
+                  Account Balance: <span className={`font-bold text-xl ${stats.accountBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    NPR {stats.accountBalance.toLocaleString()}
+                  </span>
+                </p>
+
+                {accountTransactions.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <p className="mb-2">💰 No transactions yet</p>
+                    <p className="text-sm">Transactions will appear here when guests checkout or you add manual transactions</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Income vs Expense Summary */}
+                    <div className="grid grid-cols-2 gap-4 mb-6">
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                        <p className="text-sm text-gray-600">Total Income</p>
+                        <p className="text-2xl font-bold text-green-600">
+                          NPR {accountTransactions
+                            .filter(t => t.type === 'income')
+                            .reduce((sum, t) => sum + t.amount, 0)
+                            .toLocaleString()}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {accountTransactions.filter(t => t.type === 'income').length} transactions
+                        </p>
+                      </div>
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                        <p className="text-sm text-gray-600">Total Expenses</p>
+                        <p className="text-2xl font-bold text-red-600">
+                          NPR {accountTransactions
+                            .filter(t => t.type === 'expense')
+                            .reduce((sum, t) => sum + t.amount, 0)
+                            .toLocaleString()}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {accountTransactions.filter(t => t.type === 'expense').length} transactions
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Category Breakdown */}
+                    <div className="mb-6">
+                      <p className="font-semibold text-gray-900 mb-3">By Category:</p>
+                      <div className="space-y-2">
+                        {['room_booking', 'restaurant', 'bar', 'salary', 'utilities', 'supplies', 'maintenance', 'marketing', 'other'].map((cat) => {
+                          const catTransactions = accountTransactions.filter(t => t.category === cat)
+                          const catTotal = catTransactions.reduce((sum, t) => sum + (t.type === 'income' ? t.amount : -t.amount), 0)
+                          if (catTransactions.length === 0) return null
+                          return (
+                            <div key={cat} className="border rounded-lg p-3 flex justify-between items-center">
+                              <span className="font-medium capitalize">{cat.replace('_', ' ')}</span>
+                              <div className="text-right">
+                                <span className={`font-bold ${catTotal >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                  NPR {Math.abs(catTotal).toLocaleString()}
+                                </span>
+                                <span className="text-xs text-gray-500 ml-2">({catTransactions.length})</span>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Recent Transactions */}
+                    <div>
+                      <p className="font-semibold text-gray-900 mb-3">Recent Transactions:</p>
+                      <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {accountTransactions
+                          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                          .slice(0, 20)
+                          .map((txn, i) => (
+                            <div key={i} className="border rounded-lg p-3 hover:bg-gray-50 flex justify-between items-center">
+                              <div>
+                                <p className="text-sm font-medium">{txn.description}</p>
+                                <p className="text-xs text-gray-500">
+                                  {new Date(txn.date).toLocaleDateString()} • {txn.category}
+                                  {txn.paymentMethod && ` • ${txn.paymentMethod}`}
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                <p className={`font-bold ${txn.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+                                  {txn.type === 'income' ? '+' : '-'} NPR {txn.amount.toLocaleString()}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>

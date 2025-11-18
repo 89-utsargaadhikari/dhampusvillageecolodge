@@ -1,10 +1,12 @@
-import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
 
 export async function GET() {
   try {
     const transactions = await prisma.accountTransaction.findMany({
-      orderBy: { createdAt: 'desc' }
+      orderBy: {
+        createdAt: 'desc'
+      }
     })
     return NextResponse.json(transactions)
   } catch (error) {
@@ -13,36 +15,38 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const amount = parseFloat(body.amount)
-    const currency = body.currency || 'NPR'
-    const exchangeRate = body.exchangeRate || 1
-    
+
+    // Calculate amountNPR if currency is not NPR
+    const amountNPR = body.currency === 'NPR' || !body.currency
+      ? body.amount
+      : body.amount * (body.exchangeRate || 1)
+
     const transaction = await prisma.accountTransaction.create({
       data: {
-        date: body.date, // Keep as string
+        date: new Date(body.date),
         type: body.type,
         category: body.category,
-        description: body.description,
-        amount: amount,
-        currency: currency,
-        exchangeRate: exchangeRate,
-        amountNPR: amount * exchangeRate, // Calculate NPR amount
+        description: body.description || '',
+        amount: body.amount,
+        currency: body.currency || 'NPR',
+        amountNPR: amountNPR,
+        exchangeRate: body.exchangeRate || 1,
         paymentMethod: body.paymentMethod || null,
-        referenceType: body.referenceType || null,
+        referenceType: body.referenceType || 'manual',
         referenceId: body.referenceId || null,
         taxAmount: body.taxAmount || 0,
         taxPercentage: body.taxPercentage || 0,
-        notes: body.notes || null,
-        createdBy: body.createdBy || null
+        notes: body.notes || ''
       }
     })
+    
     return NextResponse.json(transaction)
   } catch (error) {
     console.error('Failed to create transaction:', error)
-    return NextResponse.json({ error: 'Failed to create transaction', details: String(error) }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to create transaction', details: error }, { status: 500 })
   }
 }
 

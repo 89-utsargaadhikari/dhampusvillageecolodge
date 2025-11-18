@@ -1,26 +1,50 @@
-import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
 
-export async function PUT(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
+export async function GET(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id: paramId } = await params
-    const body = await request.json()
-    
-    const updateData: any = {}
-    if (body.name !== undefined) updateData.name = body.name
-    if (body.description !== undefined) updateData.description = body.description
-    if (body.price !== undefined) updateData.price = parseFloat(body.price)
-    if (body.category !== undefined) updateData.category = body.category
-    if (body.image !== undefined) updateData.image = body.image
-    if (body.available !== undefined) updateData.available = body.available
-    
-    const menuItem = await prisma.restaurantMenuItem.update({
-      where: { id: parseInt(paramId) },
-      data: updateData
+    const { id: paramId } = await context.params
+    const id = parseInt(paramId)
+
+    const menuItem = await prisma.restaurantMenuItem.findUnique({
+      where: { id }
     })
+    
+    if (!menuItem) {
+      return NextResponse.json({ error: 'Menu item not found' }, { status: 404 })
+    }
+    
+    return NextResponse.json(menuItem)
+  } catch (error) {
+    console.error('Failed to fetch menu item:', error)
+    return NextResponse.json({ error: 'Failed to fetch menu item' }, { status: 500 })
+  }
+}
+
+export async function PUT(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: paramId } = await context.params
+    const id = parseInt(paramId)
+    const body = await request.json()
+
+    const menuItem = await prisma.restaurantMenuItem.update({
+      where: { id },
+      data: {
+        name: body.name,
+        description: body.description,
+        price: body.price,
+        category: body.category,
+        image: body.image,
+        available: body.available
+      }
+    })
+    
     return NextResponse.json(menuItem)
   } catch (error) {
     console.error('Failed to update menu item:', error)
@@ -29,15 +53,18 @@ export async function PUT(
 }
 
 export async function DELETE(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id: paramId } = await params
+    const { id: paramId } = await context.params
+    const id = parseInt(paramId)
+
     await prisma.restaurantMenuItem.delete({
-      where: { id: parseInt(paramId) }
+      where: { id }
     })
-    return NextResponse.json({ success: true })
+    
+    return NextResponse.json({ message: 'Menu item deleted' })
   } catch (error) {
     console.error('Failed to delete menu item:', error)
     return NextResponse.json({ error: 'Failed to delete menu item' }, { status: 500 })

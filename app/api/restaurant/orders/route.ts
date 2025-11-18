@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
 
 export async function GET() {
   try {
@@ -9,10 +9,11 @@ export async function GET() {
           include: {
             menuItem: true
           }
-        },
-        booking: true
+        }
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: {
+        orderDate: 'desc'
+      }
     })
     return NextResponse.json(orders)
   } catch (error) {
@@ -21,51 +22,44 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    console.log('📝 Creating restaurant order:', JSON.stringify(body, null, 2))
-    
+    console.log('Creating order with data:', body)
+
     const order = await prisma.restaurantOrder.create({
       data: {
         orderNumber: body.orderNumber,
+        orderDate: new Date(body.orderDate),
         roomNumber: body.roomNumber,
         guestName: body.guestName,
-        bookingId: body.bookingId || null,
-        subtotal: parseFloat(body.subtotal),
-        tax: parseFloat(body.tax),
-        taxPercentage: parseFloat(body.taxPercentage),
-        total: parseFloat(body.total),
+        bookingId: body.bookingId,
+        subtotal: body.subtotal,
+        tax: body.tax,
+        taxPercentage: body.taxPercentage || 13,
+        total: body.total,
         status: body.status || 'pending',
+        orderType: body.orderType || 'room_service',
         items: {
           create: body.items.map((item: any) => ({
             menuItemId: item.menuItemId,
+            name: item.name,
             quantity: item.quantity,
-            price: parseFloat(item.price),
-            subtotal: parseFloat(item.price) * item.quantity
+            price: item.price,
+            subtotal: item.subtotal || (item.quantity * item.price)
           }))
         }
       },
       include: {
-        items: {
-          include: {
-            menuItem: true
-          }
-        }
+        items: true
       }
     })
     
-    console.log('✅ Order created successfully:', order.id)
+    console.log('Order created:', order)
     return NextResponse.json(order)
-  } catch (error: any) {
-    console.error('❌ Failed to create order:', error)
-    console.error('Error details:', error.message)
-    console.error('Error stack:', error.stack)
-    return NextResponse.json({ 
-      error: 'Failed to create order',
-      details: error.message,
-      stack: error.stack
-    }, { status: 500 })
+  } catch (error) {
+    console.error('Failed to create order:', error)
+    return NextResponse.json({ error: 'Failed to create order', details: error }, { status: 500 })
   }
 }
 

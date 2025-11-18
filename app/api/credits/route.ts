@@ -1,49 +1,53 @@
-import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
 
 export async function GET() {
   try {
-    const credits = await prisma.creditAccount.findMany({
+    const creditAccounts = await prisma.creditAccount.findMany({
       include: {
         payments: {
-          orderBy: { createdAt: 'desc' }
+          orderBy: {
+            paymentDate: 'desc'
+          }
         }
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: {
+        createdAt: 'desc'
+      }
     })
-    return NextResponse.json(credits)
+    return NextResponse.json(creditAccounts)
   } catch (error) {
     console.error('Failed to fetch credit accounts:', error)
     return NextResponse.json({ error: 'Failed to fetch credit accounts' }, { status: 500 })
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const credit = await prisma.creditAccount.create({
+
+    const creditAccount = await prisma.creditAccount.create({
       data: {
         guestName: body.guestName,
-        guestContact: body.guestContact,
-        guestEmail: body.guestEmail || null,
-        creditAmount: parseFloat(body.creditAmount),
-        paidAmount: parseFloat(body.paidAmount) || 0,
-        outstandingBalance: parseFloat(body.outstandingBalance),
-        creditDate: body.creditDate,
-        dueDate: body.dueDate,
-        status: body.status || 'pending',
-        linkedBookingId: body.linkedBookingId || null,
-        notes: body.notes || null,
-        lastReminderSent: body.lastReminderSent || null,
-      },
-      include: {
-        payments: true
+        guestEmail: body.guestEmail || '',
+        guestPhone: body.guestPhone,
+        guestAddress: body.guestAddress || '',
+        creditAmount: body.creditAmount,
+        paidAmount: body.paidAmount || 0,
+        outstandingBalance: body.creditAmount - (body.paidAmount || 0),
+        creditDate: new Date(body.creditDate),
+        dueDate: new Date(body.dueDate),
+        status: body.status || 'unpaid',
+        bookingId: body.bookingId || null,
+        notes: body.notes || '',
+        lastReminderSent: body.lastReminderSent ? new Date(body.lastReminderSent) : null
       }
     })
-    return NextResponse.json(credit)
+    
+    return NextResponse.json(creditAccount)
   } catch (error) {
     console.error('Failed to create credit account:', error)
-    return NextResponse.json({ error: 'Failed to create credit account' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to create credit account', details: error }, { status: 500 })
   }
 }
 

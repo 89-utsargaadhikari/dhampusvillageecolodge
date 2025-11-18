@@ -1,16 +1,19 @@
-import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
+import { NextRequest, NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
 
 export async function DELETE(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id: paramId } = await params
+    const { id: paramId } = await context.params
+    const id = parseInt(paramId)
+
     await prisma.accountTransaction.delete({
-      where: { id: parseInt(paramId) }
+      where: { id }
     })
-    return NextResponse.json({ success: true })
+    
+    return NextResponse.json({ message: 'Transaction deleted' })
   } catch (error) {
     console.error('Failed to delete transaction:', error)
     return NextResponse.json({ error: 'Failed to delete transaction' }, { status: 500 })
