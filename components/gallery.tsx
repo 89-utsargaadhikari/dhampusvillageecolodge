@@ -13,8 +13,8 @@ export default function Gallery() {
   }, [])
 
   return (
-    <section id="gallery" className="py-20 md:py-32 bg-light">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <section id="gallery" className="pt-20 pb-0 md:pt-32 bg-light">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-16">
         <div className="text-center mb-16">
           <p className="text-accent font-medium uppercase tracking-widest mb-3">Visual Journey</p>
           <h2 className="font-display text-4xl md:text-5xl text-primary mb-6">Gallery</h2>
