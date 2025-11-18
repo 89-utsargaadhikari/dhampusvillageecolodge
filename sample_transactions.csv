@@ -1,0 +1,22 @@
+Date,Type,Category,Description,Amount,Currency,Payment Method,Notes
+2025-11-01,income,room_booking,Room 101 - John Doe,15000,NPR,cash,3 nights standard room
+2025-11-02,income,restaurant,Restaurant - Room 102,3500,NPR,card,Dinner for 2
+2025-11-02,income,bar,Bar - Room 101,1200,NPR,cash,Drinks
+2025-11-03,expense,salary,Staff Salary - November,45000,NPR,bank_transfer,Monthly payroll
+2025-11-04,income,room_booking,Room 103 - Sarah Smith,22000,NPR,qr,5 nights deluxe room
+2025-11-05,expense,utilities,Electricity Bill - October,8500,NPR,bank_transfer,
+2025-11-05,expense,supplies,Kitchen Supplies,5000,NPR,cash,Groceries and ingredients
+2025-11-06,income,restaurant,Restaurant - Room 103,4200,NPR,card,Lunch and dinner
+2025-11-07,expense,maintenance,Plumbing Repair,2500,NPR,cash,Fixed bathroom leak
+2025-11-08,income,room_booking,Room 102 - Mike Johnson,18000,NPR,card,4 nights
+2025-11-09,expense,marketing,Facebook Ads,3000,NPR,card,November campaign
+2025-11-10,income,bar,Bar - Room 102,800,NPR,cash,Beer and snacks
+2025-11-11,expense,supplies,Cleaning Supplies,1500,NPR,cash,Detergents and tools
+2025-11-12,income,restaurant,Restaurant - Walk-in Customer,2800,NPR,cash,Breakfast buffet
+2025-11-13,expense,utilities,Water Bill - October,2000,NPR,bank_transfer,
+2025-11-14,income,room_booking,Room 104 - Emma Wilson,25000,NPR,bank_transfer,Suite booking - 5 nights
+2025-11-15,income,bar,Bar - Room 104,1500,NPR,card,Wine and cocktails
+2025-11-16,expense,maintenance,AC Service,4000,NPR,cash,Annual maintenance
+2025-11-17,income,restaurant,Restaurant - Room 101,3200,NPR,qr,Dinner party
+2025-11-18,expense,other,Office Supplies,800,NPR,cash,Printer paper and pens
+

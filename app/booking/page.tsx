@@ -3,7 +3,9 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { Calendar, Users, Mail, Phone, User, CreditCard, CheckCircle } from "lucide-react"
-import { getRooms, addBooking, type Room } from "@/lib/storage"
+import { type Room } from "@/lib/storage"
+import { fetchRooms, createBooking } from "@/lib/api"
+import { addNotification } from "@/lib/notifications"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -26,9 +28,18 @@ export default function BookingPage() {
   })
 
   useEffect(() => {
-    const availableRooms = getRooms().filter((r) => r.status === "Available")
-    setRooms(availableRooms)
+    loadRooms()
   }, [])
+  
+  const loadRooms = async () => {
+    try {
+      const roomsData = await fetchRooms()
+      const availableRooms = roomsData.filter((r: Room) => r.status === "Available")
+      setRooms(availableRooms)
+    } catch (error) {
+      console.error('Failed to load rooms:', error)
+    }
+  }
 
   const calculateNights = () => {
     if (!formData.checkin || !formData.checkout) return 0
@@ -44,7 +55,7 @@ export default function BookingPage() {
     return nights * parseFloat(selectedRoom.price)
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!selectedRoom) {
@@ -105,20 +116,36 @@ export default function BookingPage() {
 
     const totalPrice = calculateTotal().toString()
     
-    const newBooking = addBooking({
-      guest: formData.guest,
-      email: formData.email,
-      phone: formData.phone,
-      room: selectedRoom.name,
-      checkin: formData.checkin,
-      checkout: formData.checkout,
-      price: totalPrice,
-      status: "Pending",
-      bookingSource: "website",
-    })
+    try {
+      const newBooking = await createBooking({
+        guest: formData.guest,
+        email: formData.email,
+        phone: formData.phone,
+        room: selectedRoom.name,
+        checkin: formData.checkin,
+        checkout: formData.checkout,
+        price: totalPrice,
+        status: "Pending",
+        bookingSource: "website",
+      })
 
-    setBookingId(newBooking.id.toString())
-    setBookingComplete(true)
+      // CREATE NOTIFICATION IMMEDIATELY
+      addNotification(
+        "booking",
+        "🌐 New Website Booking",
+        `${formData.guest} - ${selectedRoom.name} (${formData.checkin} to ${formData.checkout})`,
+        "high",
+        "bookings"
+      )
+
+      console.log("✅ Notification created for website booking:", formData.guest)
+
+      setBookingId(newBooking.id.toString())
+      setBookingComplete(true)
+    } catch (error) {
+      console.error('Failed to create booking:', error)
+      alert('Failed to create booking. Please try again.')
+    }
   }
 
   if (bookingComplete) {

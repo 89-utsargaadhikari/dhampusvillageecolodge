@@ -3,16 +3,31 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { Search, CheckCircle, Clock, XCircle, Mail, Phone, Calendar, MapPin } from "lucide-react"
-import { getBookings, type Booking } from "@/lib/storage"
+import { fetchBookings } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
+interface Booking {
+  id: number
+  guest: string
+  email: string | null
+  phone: string | null
+  room: string
+  roomNumber: string | null
+  checkin: string
+  checkout: string
+  price: string
+  status: string
+  bookingSource: string | null
+}
+
 export default function BookingStatusPage() {
   const [email, setEmail] = useState("")
   const [bookings, setBookings] = useState<Booking[]>([])
   const [searched, setSearched] = useState(false)
+  const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     // Check if email is in URL params
@@ -24,22 +39,37 @@ export default function BookingStatusPage() {
     }
   }, [])
 
-  const handleSearch = (searchEmail?: string) => {
+  const handleSearch = async (searchEmail?: string) => {
     const emailToSearch = searchEmail || email
     if (!emailToSearch) return
 
-    const allBookings = getBookings()
-    const userBookings = allBookings.filter(
-      (b) => b.email?.toLowerCase() === emailToSearch.toLowerCase()
-    )
-    setBookings(userBookings)
-    setSearched(true)
+    setLoading(true)
+    try {
+      console.log('🔍 Searching bookings for:', emailToSearch)
+      const allBookings = await fetchBookings()
+      console.log('📋 All bookings from database:', allBookings)
+      const userBookings = allBookings.filter(
+        (b) => b.email?.toLowerCase() === emailToSearch.toLowerCase()
+      )
+      console.log('✅ Found bookings:', userBookings)
+      setBookings(userBookings)
+      setSearched(true)
+    } catch (error) {
+      console.error('❌ Failed to fetch bookings:', error)
+      alert('Failed to search bookings. Please try again.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const getStatusIcon = (status: string) => {
     switch (status) {
       case "Confirmed":
         return <CheckCircle className="w-5 h-5 text-green-600" />
+      case "Checked In":
+        return <CheckCircle className="w-5 h-5 text-purple-600" />
+      case "Checked Out":
+        return <CheckCircle className="w-5 h-5 text-blue-600" />
       case "Pending":
         return <Clock className="w-5 h-5 text-yellow-600" />
       case "Cancelled":
@@ -53,6 +83,10 @@ export default function BookingStatusPage() {
     switch (status) {
       case "Confirmed":
         return "bg-green-100 text-green-700 border-green-200"
+      case "Checked In":
+        return "bg-purple-100 text-purple-700 border-purple-200"
+      case "Checked Out":
+        return "bg-blue-100 text-blue-700 border-blue-200"
       case "Pending":
         return "bg-yellow-100 text-yellow-700 border-yellow-200"
       case "Cancelled":
@@ -110,9 +144,9 @@ export default function BookingStatusPage() {
                   required
                 />
               </div>
-              <Button type="submit" className="flex items-center gap-2">
+              <Button type="submit" className="flex items-center gap-2" disabled={loading}>
                 <Search size={18} />
-                Search
+                {loading ? 'Searching...' : 'Search'}
               </Button>
             </form>
           </CardContent>
@@ -230,6 +264,28 @@ export default function BookingStatusPage() {
                             <p className="text-sm text-gray-600">
                               We're looking forward to welcoming you. You'll receive a confirmation email with all the
                               details.
+                            </p>
+                          </div>
+                        )}
+                        {booking.status === "Checked In" && (
+                          <div className="space-y-2">
+                            <p className="font-semibold text-purple-700 flex items-center gap-2">
+                              <CheckCircle size={18} />
+                              You've checked in!
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              Welcome! We hope you enjoy your stay. If you need anything, please don't hesitate to contact us.
+                            </p>
+                          </div>
+                        )}
+                        {booking.status === "Checked Out" && (
+                          <div className="space-y-2">
+                            <p className="font-semibold text-blue-700 flex items-center gap-2">
+                              <CheckCircle size={18} />
+                              You've checked out
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              Thank you for staying with us! We hope to see you again soon.
                             </p>
                           </div>
                         )}

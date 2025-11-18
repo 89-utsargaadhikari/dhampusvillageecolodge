@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
 // DELETE /api/room-inventory/[roomNumber]
-export async function DELETE(request: NextRequest, { params }: { params: { roomNumber: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ roomNumber: string }> }) {
   try {
-    const { roomNumber } = params
+    const { roomNumber } = await params
     
     await prisma.roomInventory.delete({
       where: { roomNumber }

@@ -121,10 +121,11 @@ model RestaurantOrder {
   bookingId   Int?      // Link to room booking (optional)
   roomNumber  String?   // For direct room service
   guestName   String?
-  orderType   String    // "room_service" | "restaurant" | "bar"
+  orderType   String    @default("room_service") // "room_service" | "restaurant" | "bar"
   status      String    @default("pending") // "pending" | "confirmed" | "completed" | "cancelled"
   subtotal    Float
   tax         Float     @default(0)
+  taxPercentage Float   @default(0)
   total       Float
   paymentStatus String  @default("unpaid") // "unpaid" | "paid" | "credit"
   paymentMethod String? // "cash" | "card" | "qr" | "credit" | "room_bill"
@@ -193,24 +194,60 @@ model InventoryTransaction {
 
 model AccountTransaction {
   id              Int       @id @default(autoincrement())
-  date            String    // BS date string
-  dateAD          DateTime  // AD date for sorting
+  date            String    // BS date string (or AD for now)
   type            String    // "income" | "expense"
   category        String    // "room_booking" | "restaurant" | "bar" | "salary" | "utilities" | "supplies" | "other"
   description     String
   amount          Float
   currency        String    @default("NPR")
-  exchangeRate    Float?    @default(1)
-  amountNPR       Float     // Converted to NPR
+  exchangeRate    Float     @default(1)
+  amountNPR       Float     @default(0) // Converted to NPR
   paymentMethod   String?   // "cash" | "card" | "bank_transfer" | "credit"
   referenceType   String?   // "booking" | "order" | "manual"
   referenceId     Int?
-  taxAmount       Float?    @default(0)
-  taxPercentage   Float?    @default(0)
+  taxAmount       Float     @default(0)
+  taxPercentage   Float     @default(0)
   notes           String?
   createdBy       String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+}
+
+// ============================================
+// CREDIT/DEBT TRACKING
+// ============================================
+
+model CreditAccount {
+  id                  Int      @id @default(autoincrement())
+  guestName           String
+  guestContact        String
+  guestEmail          String?
+  creditAmount        Float    // Total credit given
+  paidAmount          Float    @default(0)
+  outstandingBalance  Float    // Remaining balance
+  creditDate          String   // Date credit was given
+  dueDate             String   // Payment due date
+  status              String   @default("pending") // "pending" | "partial" | "paid" | "overdue"
+  linkedBookingId     Int?     // Link to booking
+  notes               String?
+  lastReminderSent    String?  // Date of last reminder
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  
+  payments            CreditPayment[]
+}
+
+model CreditPayment {
+  id              Int      @id @default(autoincrement())
+  creditAccountId Int
+  amount          Float
+  paymentDate     String
+  paymentMethod   String?  // "cash" | "card" | "qr" | "bank_transfer"
+  receivedBy      String?  // Staff member
+  notes           String?
+  createdAt       DateTime @default(now())
+  
+  creditAccount   CreditAccount @relation(fields: [creditAccountId], references: [id], onDelete: Cascade)
 }
 
 // ============================================

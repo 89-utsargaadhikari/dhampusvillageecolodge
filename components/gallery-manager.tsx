@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react"
 import { Trash2, Plus, Upload, X } from "lucide-react"
-import { getGallery, addGalleryItem, deleteGalleryItem, convertImageToBase64, type GalleryItem } from "@/lib/storage"
+import { convertImageToBase64, type GalleryItem } from "@/lib/storage"
+import { fetchGallery, createGalleryItem, deleteGalleryItem as deleteGalleryAPI } from "@/lib/api"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -20,8 +21,17 @@ export default function GalleryManager() {
   })
 
   useEffect(() => {
-    setGalleryItems(getGallery())
+    loadGallery()
   }, [])
+  
+  const loadGallery = async () => {
+    try {
+      const items = await fetchGallery()
+      setGalleryItems(items)
+    } catch (error) {
+      console.error('Failed to load gallery:', error)
+    }
+  }
 
   const handleOpenDialog = () => {
     setFormData({
@@ -47,7 +57,7 @@ export default function GalleryManager() {
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!formData.src) {
@@ -55,20 +65,30 @@ export default function GalleryManager() {
       return
     }
 
-    addGalleryItem({
-      src: formData.src,
-      alt: formData.alt,
-      category: formData.category,
-    })
+    try {
+      await createGalleryItem({
+        src: formData.src,
+        alt: formData.alt,
+        category: formData.category,
+      })
 
-    setGalleryItems(getGallery())
-    setIsDialogOpen(false)
+      await loadGallery()
+      setIsDialogOpen(false)
+    } catch (error) {
+      console.error('Failed to add gallery item:', error)
+      alert('Failed to add gallery item')
+    }
   }
 
-  const handleDelete = (id: number) => {
+  const handleDelete = async (id: number) => {
     if (confirm("Are you sure you want to delete this image?")) {
-      deleteGalleryItem(id)
-      setGalleryItems(getGallery())
+      try {
+        await deleteGalleryAPI(id)
+        await loadGallery()
+      } catch (error) {
+        console.error('Failed to delete gallery item:', error)
+        alert('Failed to delete gallery item')
+      }
     }
   }
 
@@ -87,8 +107,8 @@ export default function GalleryManager() {
           <div key={item.id} className="bg-white rounded-lg shadow overflow-hidden group">
             <div className="relative overflow-hidden h-48">
               <img
-                src={item.src || "/placeholder.svg"}
-                alt={item.alt}
+                src={(item as any).image || item.src || "/placeholder.svg"}
+                alt={(item as any).title || item.alt || "Gallery image"}
                 className="w-full h-full object-cover group-hover:scale-110 transition-transform"
               />
               <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
@@ -101,7 +121,7 @@ export default function GalleryManager() {
               </div>
             </div>
             <div className="p-4">
-              <p className="text-sm font-semibold text-gray-900 mb-1">{item.alt}</p>
+              <p className="text-sm font-semibold text-gray-900 mb-1">{(item as any).title || item.alt}</p>
               <p className="text-xs text-gray-500">{item.category}</p>
             </div>
           </div>

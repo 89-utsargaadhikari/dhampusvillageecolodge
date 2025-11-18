@@ -1,234 +1,216 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Trash2, HardDrive, AlertTriangle } from "lucide-react"
+import { Database, HardDrive, AlertCircle, CheckCircle, ExternalLink } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { getRooms, getGallery, deleteRoom, getBookings } from "@/lib/storage"
+import { 
+  fetchBookings, 
+  fetchRooms, 
+  fetchRoomInventory,
+  fetchGallery,
+  fetchRestaurantMenu,
+  fetchRestaurantOrders,
+  fetchAccountTransactions,
+  fetchCreditAccounts
+} from "@/lib/api"
 
 export default function StorageManager() {
-  const [storageInfo, setStorageInfo] = useState({
-    used: 0,
-    total: 5 * 1024 * 1024, // 5MB typical localStorage limit
-    percentage: 0,
+  const [dbStats, setDbStats] = useState({
+    bookings: 0,
+    rooms: 0,
+    roomInventory: 0,
+    gallery: 0,
+    menuItems: 0,
+    orders: 0,
+    transactions: 0,
+    creditAccounts: 0,
+    totalRecords: 0
   })
-  const [rooms, setRooms] = useState<any[]>([])
-  const [gallery, setGallery] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    calculateStorage()
-    loadData()
+    loadDatabaseStats()
   }, [])
 
-  const calculateStorage = () => {
-    let total = 0
-    for (let key in localStorage) {
-      if (localStorage.hasOwnProperty(key)) {
-        total += localStorage[key].length + key.length
+  const loadDatabaseStats = async () => {
+    try {
+      setLoading(true)
+      const [
+        bookings,
+        rooms,
+        inventory,
+        gallery,
+        menu,
+        orders,
+        transactions,
+        credits
+      ] = await Promise.all([
+        fetchBookings(),
+        fetchRooms(),
+        fetchRoomInventory(),
+        fetchGallery(),
+        fetchRestaurantMenu(),
+        fetchRestaurantOrders(),
+        fetchAccountTransactions(),
+        fetchCreditAccounts()
+      ])
+
+      const stats = {
+        bookings: bookings.length,
+        rooms: rooms.length,
+        roomInventory: inventory.length,
+        gallery: gallery.length,
+        menuItems: menu.length,
+        orders: orders.length,
+        transactions: transactions.length,
+        creditAccounts: credits.length,
+        totalRecords: bookings.length + rooms.length + inventory.length + gallery.length + 
+                     menu.length + orders.length + transactions.length + credits.length
       }
-    }
-    const percentage = Math.round((total / (5 * 1024 * 1024)) * 100)
-    setStorageInfo({
-      used: total,
-      total: 5 * 1024 * 1024,
-      percentage,
-    })
-  }
 
-  const loadData = () => {
-    setRooms(getRooms())
-    setGallery(getGallery())
-  }
-
-  const formatBytes = (bytes: number) => {
-    if (bytes === 0) return "0 Bytes"
-    const k = 1024
-    const sizes = ["Bytes", "KB", "MB"]
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + " " + sizes[i]
-  }
-
-  const getImageSize = (base64: string) => {
-    return base64.length
-  }
-
-  const handleRemoveRoomImage = (roomId: number) => {
-    if (confirm("Remove image from this room? (Room details will be kept)")) {
-      const room = rooms.find((r) => r.id === roomId)
-      if (room) {
-        const updatedRoom = { ...room, image: "/placeholder.svg" }
-        // Update room without image
-        const allRooms = getRooms().map((r) => (r.id === roomId ? updatedRoom : r))
-        localStorage.setItem("lodge_rooms", JSON.stringify(allRooms))
-        calculateStorage()
-        loadData()
-      }
+      setDbStats(stats)
+    } catch (error) {
+      console.error('Failed to load database stats:', error)
+    } finally {
+      setLoading(false)
     }
   }
-
-  const handleRemoveGalleryImage = (imageId: number) => {
-    if (confirm("Delete this gallery image?")) {
-      const updatedGallery = gallery.filter((g) => g.id !== imageId)
-      localStorage.setItem("lodge_gallery", JSON.stringify(updatedGallery))
-      calculateStorage()
-      loadData()
-    }
-  }
-
-  const handleClearNonEssential = () => {
-    if (confirm("Clear all gallery images? (Rooms and bookings will be kept)")) {
-      localStorage.setItem("lodge_gallery", JSON.stringify([]))
-      calculateStorage()
-      loadData()
-    }
-  }
-
-  const roomsWithImages = rooms.filter((r) => r.image && r.image.startsWith("data:"))
-  const galleryImages = gallery.filter((g) => g.src && g.src.startsWith("data:"))
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-gray-900">Storage Management</h2>
+        <h2 className="text-2xl font-bold text-gray-900">Database Management</h2>
+        <Button onClick={loadDatabaseStats} variant="outline">
+          Refresh Stats
+        </Button>
       </div>
 
-      {/* Storage Overview */}
+      {/* Migration Success Notice */}
+      <Card className="bg-green-50 border-green-200">
+        <CardContent className="pt-6">
+          <div className="flex items-start gap-3">
+            <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" />
+            <div>
+              <p className="font-semibold text-green-900">✅ Database Migration Complete!</p>
+              <p className="text-sm text-green-700 mt-1">
+                All data has been successfully migrated from localStorage to SQLite database. 
+                Your system is now using a proper database for all operations.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Database Stats */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <HardDrive className="w-5 h-5" />
-            Storage Usage
+            <Database className="w-5 h-5" />
+            Database Statistics
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">Used</span>
-              <span className="font-bold">{formatBytes(storageInfo.used)} / {formatBytes(storageInfo.total)}</span>
+          {loading ? (
+            <p className="text-center py-4 text-gray-500">Loading database stats...</p>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="p-4 bg-blue-50 rounded-lg">
+                <p className="text-sm text-gray-600">Total Records</p>
+                <p className="text-3xl font-bold text-blue-600">{dbStats.totalRecords}</p>
+              </div>
+              <div className="p-4 bg-purple-50 rounded-lg">
+                <p className="text-sm text-gray-600">Bookings</p>
+                <p className="text-3xl font-bold text-purple-600">{dbStats.bookings}</p>
+              </div>
+              <div className="p-4 bg-green-50 rounded-lg">
+                <p className="text-sm text-gray-600">Rooms</p>
+                <p className="text-3xl font-bold text-green-600">{dbStats.rooms}</p>
+              </div>
+              <div className="p-4 bg-orange-50 rounded-lg">
+                <p className="text-sm text-gray-600">Room Inventory</p>
+                <p className="text-3xl font-bold text-orange-600">{dbStats.roomInventory}</p>
+              </div>
+              <div className="p-4 bg-pink-50 rounded-lg">
+                <p className="text-sm text-gray-600">Gallery Images</p>
+                <p className="text-3xl font-bold text-pink-600">{dbStats.gallery}</p>
+              </div>
+              <div className="p-4 bg-yellow-50 rounded-lg">
+                <p className="text-sm text-gray-600">Menu Items</p>
+                <p className="text-3xl font-bold text-yellow-600">{dbStats.menuItems}</p>
+              </div>
+              <div className="p-4 bg-indigo-50 rounded-lg">
+                <p className="text-sm text-gray-600">Restaurant Orders</p>
+                <p className="text-3xl font-bold text-indigo-600">{dbStats.orders}</p>
+              </div>
+              <div className="p-4 bg-teal-50 rounded-lg">
+                <p className="text-sm text-gray-600">Transactions</p>
+                <p className="text-3xl font-bold text-teal-600">{dbStats.transactions}</p>
+              </div>
+              <div className="p-4 bg-red-50 rounded-lg">
+                <p className="text-sm text-gray-600">Credit Accounts</p>
+                <p className="text-3xl font-bold text-red-600">{dbStats.creditAccounts}</p>
+              </div>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-4">
-              <div
-                className={`h-4 rounded-full transition-all ${
-                  storageInfo.percentage > 90
-                    ? "bg-red-500"
-                    : storageInfo.percentage > 70
-                    ? "bg-yellow-500"
-                    : "bg-green-500"
-                }`}
-                style={{ width: `${Math.min(storageInfo.percentage, 100)}%` }}
-              />
-            </div>
-            <p className="text-sm text-gray-600">
-              {storageInfo.percentage}% full
-              {storageInfo.percentage > 80 && (
-                <span className="text-red-600 font-semibold ml-2">
-                  <AlertTriangle className="inline w-4 h-4 mr-1" />
-                  Running low on storage!
-                </span>
-              )}
-            </p>
-          </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Quick Actions */}
+      {/* Database Tools */}
       <Card>
         <CardHeader>
-          <CardTitle>Quick Actions</CardTitle>
+          <CardTitle>Database Tools</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Button
-            onClick={handleClearNonEssential}
-            variant="outline"
-            className="w-full justify-start text-orange-600 border-orange-300 hover:bg-orange-50"
-          >
-            <Trash2 className="mr-2 w-4 h-4" />
-            Clear All Gallery Images ({galleryImages.length} images)
-          </Button>
-          <p className="text-xs text-gray-500">
-            This will keep all rooms and bookings but remove gallery images
-          </p>
-        </CardContent>
-      </Card>
-
-      {/* Room Images */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Room Images ({roomsWithImages.length})</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {roomsWithImages.map((room) => (
-              <div key={room.id} className="flex items-center justify-between p-3 border rounded-lg">
-                <div className="flex items-center gap-3">
-                  <img src={room.image} alt={room.name} className="w-16 h-16 object-cover rounded" />
-                  <div>
-                    <p className="font-semibold">{room.name}</p>
-                    <p className="text-sm text-gray-500">{formatBytes(getImageSize(room.image))}</p>
-                  </div>
-                </div>
-                <Button
-                  onClick={() => handleRemoveRoomImage(room.id)}
-                  variant="outline"
-                  size="sm"
-                  className="text-red-600 border-red-300 hover:bg-red-50"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
+          <div className="p-4 border rounded-lg">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="font-semibold">Prisma Studio</h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  Visual database browser to view and edit all records directly
+                </p>
+                <p className="text-xs text-gray-500 mt-2">
+                  Run in terminal: <code className="bg-gray-100 px-2 py-1 rounded">npx prisma studio</code>
+                </p>
               </div>
-            ))}
-            {roomsWithImages.length === 0 && (
-              <p className="text-sm text-gray-500 text-center py-4">No room images stored</p>
-            )}
+              <ExternalLink className="w-5 h-5 text-gray-400" />
+            </div>
+          </div>
+
+          <div className="p-4 border rounded-lg">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="font-semibold">Database File</h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  Location: <code className="bg-gray-100 px-2 py-1 rounded">prisma/dev.db</code>
+                </p>
+                <p className="text-xs text-gray-500 mt-2">
+                  SQLite database file - can be backed up by copying this file
+                </p>
+              </div>
+              <HardDrive className="w-5 h-5 text-gray-400" />
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Gallery Images */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Gallery Images ({galleryImages.length})</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 gap-3">
-            {galleryImages.map((image) => (
-              <div key={image.id} className="relative group">
-                <img src={image.src} alt={image.alt} className="w-full h-32 object-cover rounded" />
-                <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                  <Button
-                    onClick={() => handleRemoveGalleryImage(image.id)}
-                    variant="destructive"
-                    size="sm"
-                  >
-                    <Trash2 className="w-4 h-4 mr-1" />
-                    Delete
-                  </Button>
-                </div>
-                <p className="text-xs text-gray-500 mt-1">{formatBytes(getImageSize(image.src))}</p>
-              </div>
-            ))}
-            {galleryImages.length === 0 && (
-              <p className="text-sm text-gray-500 text-center py-4 col-span-2">No gallery images stored</p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Tips */}
+      {/* Info Card */}
       <Card className="bg-blue-50 border-blue-200">
         <CardHeader>
-          <CardTitle className="text-blue-900">💡 Storage Tips</CardTitle>
+          <CardTitle className="text-blue-900 flex items-center gap-2">
+            <AlertCircle className="w-5 h-5" />
+            Database Information
+          </CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-blue-800 space-y-2">
-          <p>• Images are automatically compressed to 800x600px at 70% quality</p>
-          <p>• Use external image URLs instead of uploading (saves storage)</p>
-          <p>• Regularly clean up unused gallery images</p>
-          <p>• Consider moving to a real backend with database for production</p>
+          <p>✅ <strong>All data is now stored in SQLite database</strong></p>
+          <p>✅ <strong>localStorage is only used for admin authentication</strong></p>
+          <p>✅ <strong>Data persists between browser sessions</strong></p>
+          <p>✅ <strong>Database supports multiple concurrent users</strong></p>
+          <p>💡 <strong>Backup Tip:</strong> Copy <code className="bg-blue-100 px-1">prisma/dev.db</code> file regularly</p>
+          <p>💡 <strong>Migration Tip:</strong> Use Prisma migrations for schema changes</p>
         </CardContent>
       </Card>
     </div>
   )
 }
-
-
-

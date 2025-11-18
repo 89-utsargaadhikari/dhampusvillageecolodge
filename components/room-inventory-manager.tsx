@@ -2,7 +2,14 @@
 
 import { useState, useEffect } from "react"
 import { Plus, Edit, Trash2, DoorOpen, Save } from "lucide-react"
-import { getRooms, getRoomInventory, saveRoomInventory, type Room, type RoomInventoryItem } from "@/lib/storage"
+import { type Room, type RoomInventoryItem } from "@/lib/storage"
+import { 
+  fetchRooms, 
+  fetchRoomInventory, 
+  createRoomInventoryItem,
+  bulkUpdateRoomInventory, 
+  deleteRoomInventoryItem 
+} from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -24,9 +31,22 @@ export default function RoomInventoryManager() {
 
   // Load data
   useEffect(() => {
-    setRoomTypes(getRooms())
-    setInventory(getRoomInventory())
+    loadData()
   }, [])
+  
+  const loadData = async () => {
+    try {
+      const [roomsData, inventoryData] = await Promise.all([
+        fetchRooms(),
+        fetchRoomInventory()
+      ])
+      setRoomTypes(roomsData)
+      setInventory(inventoryData)
+    } catch (error) {
+      console.error('Failed to load inventory data:', error)
+      alert('Failed to load inventory data')
+    }
+  }
 
   const handleOpenDialog = (item?: RoomInventoryItem) => {
     if (item) {
@@ -49,13 +69,13 @@ export default function RoomInventoryManager() {
     setIsDialogOpen(true)
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     const selectedRoom = roomTypes.find((r) => r.id.toString() === formData.roomTypeId)
     if (!selectedRoom) return
 
-    const newItem: RoomInventoryItem = {
+    const newItem = {
       roomNumber: formData.roomNumber,
       roomType: selectedRoom.name,
       roomTypeId: selectedRoom.id,
@@ -63,34 +83,41 @@ export default function RoomInventoryManager() {
       notes: formData.notes,
     }
 
-    let updatedInventory: RoomInventoryItem[]
-
-    if (editingItem) {
-      // Update existing
-      updatedInventory = inventory.map((item) =>
-        item.roomNumber === editingItem.roomNumber ? newItem : item
-      )
-    } else {
-      // Add new
-      if (inventory.find((item) => item.roomNumber === formData.roomNumber)) {
-        alert("This room number already exists!")
-        return
+    try {
+      if (editingItem) {
+        // For updates, we use bulk update
+        const updatedInventory = inventory.map((item) =>
+          item.roomNumber === editingItem.roomNumber ? newItem : item
+        )
+        updatedInventory.sort((a, b) => a.roomNumber.localeCompare(b.roomNumber))
+        await bulkUpdateRoomInventory(updatedInventory)
+      } else {
+        // Add new
+        if (inventory.find((item) => item.roomNumber === formData.roomNumber)) {
+          alert("This room number already exists!")
+          return
+        }
+        await createRoomInventoryItem(newItem)
       }
-      updatedInventory = [...inventory, newItem]
-    }
 
-    // Sort by room number
-    updatedInventory.sort((a, b) => a.roomNumber.localeCompare(b.roomNumber))
-    saveRoomInventory(updatedInventory)
-    setInventory(updatedInventory)
-    setIsDialogOpen(false)
+      await loadData()
+      setIsDialogOpen(false)
+      setEditingItem(null)
+    } catch (error) {
+      console.error('Failed to save room inventory:', error)
+      alert('Failed to save room inventory')
+    }
   }
 
-  const handleDelete = (roomNumber: string) => {
+  const handleDelete = async (roomNumber: string) => {
     if (confirm(`Delete room ${roomNumber}?`)) {
-      const updatedInventory = inventory.filter((item) => item.roomNumber !== roomNumber)
-      saveRoomInventory(updatedInventory)
-      setInventory(updatedInventory)
+      try {
+        await deleteRoomInventoryItem(roomNumber)
+        await loadData()
+      } catch (error) {
+        console.error('Failed to delete room inventory:', error)
+        alert('Failed to delete room inventory')
+      }
     }
   }
 

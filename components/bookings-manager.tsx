@@ -2,7 +2,16 @@
 
 import { useState, useEffect } from "react"
 import { Trash2, Edit, Plus, CheckCircle, X, DoorOpen } from "lucide-react"
-import { getBookings, addBooking, updateBooking, deleteBooking, getRooms, getAvailableRoomNumbers, type Booking } from "@/lib/storage"
+import { type Booking } from "@/lib/storage"
+import { 
+  fetchBookings, 
+  createBooking, 
+  updateBooking as updateBookingAPI, 
+  deleteBooking as deleteBookingAPI,
+  fetchRooms,
+  fetchRoomInventory
+} from "@/lib/api"
+import { addNotification, getNotifications } from "@/lib/notifications"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -16,7 +25,7 @@ export default function BookingsManager() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isRoomAssignDialogOpen, setIsRoomAssignDialogOpen] = useState(false)
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null)
-  const [pendingStatusChange, setPendingStatusChange] = useState<{ id: number; status: "Confirmed" | "Pending" | "Cancelled" | "Checked Out" } | null>(null)
+  const [pendingStatusChange, setPendingStatusChange] = useState<{ id: number; status: "Confirmed" | "Pending" | "Cancelled" | "Checked In" | "Checked Out" } | null>(null)
   const [formData, setFormData] = useState({
     guest: "",
     email: "",
@@ -26,52 +35,132 @@ export default function BookingsManager() {
     checkin: "",
     checkout: "",
     price: "",
-    status: "Pending" as "Confirmed" | "Pending" | "Cancelled" | "Checked Out",
+    status: "Pending" as "Confirmed" | "Pending" | "Cancelled" | "Checked In" | "Checked Out",
     bookingSource: "phone" as "website" | "phone" | "walkin",
   })
   const [quickRoomAssign, setQuickRoomAssign] = useState("")
 
   useEffect(() => {
-    setBookings(getBookings())
-    const roomList = getRooms().map((r) => r.name)
-    setRooms(roomList)
+    loadData()
   }, [])
+  
+  const loadData = async () => {
+    try {
+      const [bookingsData, roomsData] = await Promise.all([
+        fetchBookings(),
+        fetchRooms()
+      ])
+      setBookings(bookingsData)
+      const roomList = roomsData.map((r: any) => r.name)
+      setRooms(roomList)
+      
+      // REMOVED: Don't create notifications here - they're created when booking is submitted
+    } catch (error) {
+      console.error('Failed to load bookings data:', error)
+      alert('Failed to load bookings data')
+    }
+  }
 
   // Update available room numbers when room changes
   useEffect(() => {
     if (formData.room) {
-      const allRooms = getRooms()
-      const selectedRoom = allRooms.find((r) => r.name === formData.room)
-      if (selectedRoom) {
-        const available = getAvailableRoomNumbers(
-          selectedRoom.id, 
-          editingBooking?.id,
-          formData.checkin,
-          formData.checkout
-        )
-        setAvailableRoomNumbers(available)
-      }
+      loadAvailableRooms()
     } else {
       setAvailableRoomNumbers([])
     }
   }, [formData.room, formData.checkin, formData.checkout, editingBooking])
+  
+  const loadAvailableRooms = async () => {
+    try {
+      const [roomsData, inventoryData, bookingsData] = await Promise.all([
+        fetchRooms(),
+        fetchRoomInventory(),
+        fetchBookings()
+      ])
+      
+      const selectedRoom = roomsData.find((r: any) => r.name === formData.room)
+      if (!selectedRoom) return
+      
+      // Get all room numbers for this room type
+      const roomNumbersForType = inventoryData
+        .filter((inv: any) => inv.roomTypeId === selectedRoom.id)
+        .map((inv: any) => inv.roomNumber)
+      
+      // Filter out occupied rooms for the selected dates
+      const checkin = new Date(formData.checkin)
+      const checkout = new Date(formData.checkout)
+      
+      const available = roomNumbersForType.filter((roomNum: string) => {
+        // Check if this room number has conflicting bookings
+        const hasConflict = bookingsData.some((booking: any) => {
+          if (editingBooking && booking.id === editingBooking.id) return false
+          if (booking.status === "Cancelled" || booking.status === "Checked Out") return false
+          if (booking.roomNumber !== roomNum) return false
+          
+          const bookingCheckin = new Date(booking.checkin)
+          const bookingCheckout = new Date(booking.checkout)
+          
+          return checkin < bookingCheckout && checkout > bookingCheckin
+        })
+        
+        return !hasConflict
+      })
+      
+      setAvailableRoomNumbers(available)
+    } catch (error) {
+      console.error('Failed to load available rooms:', error)
+    }
+  }
 
   // Update available room numbers when quick assign dialog opens
   useEffect(() => {
     if (isRoomAssignDialogOpen && editingBooking) {
-      const allRooms = getRooms()
-      const selectedRoom = allRooms.find((r) => r.name === editingBooking.room)
-      if (selectedRoom) {
-        const available = getAvailableRoomNumbers(
-          selectedRoom.id,
-          editingBooking.id,
-          editingBooking.checkin,
-          editingBooking.checkout
-        )
-        setAvailableRoomNumbers(available)
-      }
+      loadAvailableRoomsForQuickAssign()
     }
   }, [isRoomAssignDialogOpen, editingBooking])
+  
+  const loadAvailableRoomsForQuickAssign = async () => {
+    if (!editingBooking) return
+    
+    try {
+      const [roomsData, inventoryData, bookingsData] = await Promise.all([
+        fetchRooms(),
+        fetchRoomInventory(),
+        fetchBookings()
+      ])
+      
+      const selectedRoom = roomsData.find((r: any) => r.name === editingBooking.room)
+      if (!selectedRoom) return
+      
+      // Get all room numbers for this room type
+      const roomNumbersForType = inventoryData
+        .filter((inv: any) => inv.roomTypeId === selectedRoom.id)
+        .map((inv: any) => inv.roomNumber)
+      
+      // Filter out occupied rooms for the selected dates
+      const checkin = new Date(editingBooking.checkin)
+      const checkout = new Date(editingBooking.checkout)
+      
+      const available = roomNumbersForType.filter((roomNum: string) => {
+        const hasConflict = bookingsData.some((booking: any) => {
+          if (booking.id === editingBooking.id) return false
+          if (booking.status === "Cancelled" || booking.status === "Checked Out") return false
+          if (booking.roomNumber !== roomNum) return false
+          
+          const bookingCheckin = new Date(booking.checkin)
+          const bookingCheckout = new Date(booking.checkout)
+          
+          return checkin < bookingCheckout && checkout > bookingCheckin
+        })
+        
+        return !hasConflict
+      })
+      
+      setAvailableRoomNumbers(available)
+    } catch (error) {
+      console.error('Failed to load available rooms for quick assign:', error)
+    }
+  }
 
   const handleOpenDialog = (booking?: Booking) => {
     if (booking) {
@@ -106,7 +195,7 @@ export default function BookingsManager() {
     setIsDialogOpen(true)
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     // Validate dates
@@ -189,25 +278,35 @@ export default function BookingsManager() {
       bookingSource: formData.bookingSource,
     }
 
-    if (editingBooking) {
-      updateBooking(editingBooking.id, bookingData)
-    } else {
-      addBooking(bookingData)
-    }
+    try {
+      if (editingBooking) {
+        await updateBookingAPI(editingBooking.id, bookingData)
+      } else {
+        await createBooking(bookingData)
+      }
 
-    setBookings(getBookings())
-    setIsDialogOpen(false)
-    setEditingBooking(null)
+      await loadData()
+      setIsDialogOpen(false)
+      setEditingBooking(null)
+    } catch (error) {
+      console.error('Failed to save booking:', error)
+      alert('Failed to save booking')
+    }
   }
 
-  const handleDelete = (id: number) => {
+  const handleDelete = async (id: number) => {
     if (confirm("Are you sure you want to delete this booking?")) {
-      deleteBooking(id)
-      setBookings(getBookings())
+      try {
+        await deleteBookingAPI(id)
+        await loadData()
+      } catch (error) {
+        console.error('Failed to delete booking:', error)
+        alert('Failed to delete booking')
+      }
     }
   }
 
-  const handleStatusChange = (id: number, status: "Confirmed" | "Pending" | "Cancelled" | "Checked Out") => {
+  const handleStatusChange = async (id: number, status: "Confirmed" | "Pending" | "Cancelled" | "Checked In" | "Checked Out") => {
     // If confirming, check if room number is assigned
     if (status === "Confirmed") {
       const booking = bookings.find((b) => b.id === id)
@@ -220,24 +319,34 @@ export default function BookingsManager() {
       }
     }
     
-    updateBooking(id, { status })
-    setBookings(getBookings())
+    try {
+      await updateBookingAPI(id, { status })
+      await loadData()
+    } catch (error) {
+      console.error('Failed to update booking status:', error)
+      alert('Failed to update booking status')
+    }
   }
 
-  const handleQuickRoomAssign = () => {
+  const handleQuickRoomAssign = async () => {
     if (!quickRoomAssign || !pendingStatusChange || !editingBooking) return
     
-    // Assign room number and update status
-    updateBooking(pendingStatusChange.id, {
-      roomNumber: quickRoomAssign,
-      status: pendingStatusChange.status,
-    })
-    
-    setBookings(getBookings())
-    setIsRoomAssignDialogOpen(false)
-    setPendingStatusChange(null)
-    setEditingBooking(null)
-    setQuickRoomAssign("")
+    try {
+      // Assign room number and update status
+      await updateBookingAPI(pendingStatusChange.id, {
+        roomNumber: quickRoomAssign,
+        status: pendingStatusChange.status,
+      })
+      
+      await loadData()
+      setIsRoomAssignDialogOpen(false)
+      setPendingStatusChange(null)
+      setEditingBooking(null)
+      setQuickRoomAssign("")
+    } catch (error) {
+      console.error('Failed to assign room:', error)
+      alert('Failed to assign room')
+    }
   }
 
   return (
@@ -300,7 +409,7 @@ export default function BookingsManager() {
                     <Select
                       value={booking.status}
                       onValueChange={(value) =>
-                        handleStatusChange(booking.id, value as "Confirmed" | "Pending" | "Cancelled" | "Checked Out")
+                        handleStatusChange(booking.id, value as "Confirmed" | "Pending" | "Cancelled" | "Checked In" | "Checked Out")
                       }
                     >
                       <SelectTrigger className="w-[130px]">
@@ -310,9 +419,11 @@ export default function BookingsManager() {
                               ? "bg-green-100 text-green-700"
                               : booking.status === "Pending"
                                 ? "bg-yellow-100 text-yellow-700"
-                                : booking.status === "Checked Out"
-                                  ? "bg-blue-100 text-blue-700"
-                                  : "bg-red-100 text-red-700"
+                                : booking.status === "Checked In"
+                                  ? "bg-purple-100 text-purple-700"
+                                  : booking.status === "Checked Out"
+                                    ? "bg-blue-100 text-blue-700"
+                                    : "bg-red-100 text-red-700"
                           }`}
                         >
                           <CheckCircle size={14} className="mr-1" />
@@ -322,6 +433,7 @@ export default function BookingsManager() {
                       <SelectContent>
                         <SelectItem value="Pending">Pending</SelectItem>
                         <SelectItem value="Confirmed">Confirmed</SelectItem>
+                        <SelectItem value="Checked In">Checked In</SelectItem>
                         <SelectItem value="Checked Out">Checked Out</SelectItem>
                         <SelectItem value="Cancelled">Cancelled</SelectItem>
                       </SelectContent>
@@ -478,7 +590,7 @@ export default function BookingsManager() {
                 <Select
                   value={formData.status}
                   onValueChange={(value) =>
-                    setFormData({ ...formData, status: value as "Confirmed" | "Pending" | "Cancelled" })
+                    setFormData({ ...formData, status: value as "Confirmed" | "Pending" | "Cancelled" | "Checked In" | "Checked Out" })
                   }
                 >
                   <SelectTrigger>
@@ -487,6 +599,7 @@ export default function BookingsManager() {
                   <SelectContent>
                     <SelectItem value="Pending">Pending</SelectItem>
                     <SelectItem value="Confirmed">Confirmed</SelectItem>
+                    <SelectItem value="Checked In">Checked In</SelectItem>
                     <SelectItem value="Checked Out">Checked Out</SelectItem>
                     <SelectItem value="Cancelled">Cancelled</SelectItem>
                   </SelectContent>
