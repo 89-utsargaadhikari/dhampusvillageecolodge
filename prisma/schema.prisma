@@ -1,0 +1,227 @@
+// Dhampus Eco Lodge - Complete Database Schema
+// Hotel Management System + Restaurant Management System + Account Management
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// HOTEL MANAGEMENT SYSTEM (HMS)
+// ============================================
+
+model Room {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique
+  price       String
+  description String
+  capacity    Int
+  status      String    // "Available" | "Booked"
+  features    String    // JSON array stored as string
+  rating      Float
+  image       String?   // Base64 or URL
+  roomNumbers String?   // Comma-separated (legacy support)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  inventory   RoomInventory[]
+}
+
+model RoomInventory {
+  id         Int      @id @default(autoincrement())
+  roomNumber String   @unique
+  roomType   String
+  roomTypeId Int
+  floor      String?
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  
+  room       Room     @relation(fields: [roomTypeId], references: [id], onDelete: Cascade)
+  bookings   Booking[]
+}
+
+model Booking {
+  id            Int       @id @default(autoincrement())
+  guest         String
+  email         String?
+  phone         String?
+  room          String    // Room type name
+  roomNumber    String?
+  checkin       String    // Stored as string for now (will add BS conversion)
+  checkout      String
+  price         String
+  status        String    // "Pending" | "Confirmed" | "Cancelled" | "Checked Out"
+  bookingSource String?   // "website" | "phone" | "walkin"
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  roomInventory RoomInventory? @relation(fields: [roomNumber], references: [roomNumber])
+  restaurantOrders RestaurantOrder[]
+}
+
+// ============================================
+// SITE SETTINGS
+// ============================================
+
+model SiteSettings {
+  id        Int      @id @default(autoincrement())
+  logo      String?
+  siteName  String   @default("Dhampus Eco Lodge")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model HeroSettings {
+  id             Int      @id @default(autoincrement())
+  backgroundType String   @default("image") // "image" | "video"
+  backgroundUrl  String?
+  title          String   @default("Welcome to Dhampus Eco Lodge")
+  subtitle       String   @default("Experience luxury in the heart of the Himalayas")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model GalleryItem {
+  id        Int      @id @default(autoincrement())
+  image     String   // Base64 or URL
+  title     String
+  category  String?  @default("general")
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ============================================
+// RESTAURANT MANAGEMENT SYSTEM (RMS)
+// ============================================
+
+model RestaurantMenuItem {
+  id          Int       @id @default(autoincrement())
+  name        String
+  description String?
+  price       Float
+  category    String    // "food" | "drinks" | "bar" | "snacks"
+  image       String?
+  available   Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  orderItems  OrderItem[]
+  inventoryItem InventoryItem?
+}
+
+model RestaurantOrder {
+  id          Int       @id @default(autoincrement())
+  orderNumber String    @unique
+  bookingId   Int?      // Link to room booking (optional)
+  roomNumber  String?   // For direct room service
+  guestName   String?
+  orderType   String    // "room_service" | "restaurant" | "bar"
+  status      String    @default("pending") // "pending" | "confirmed" | "completed" | "cancelled"
+  subtotal    Float
+  tax         Float     @default(0)
+  total       Float
+  paymentStatus String  @default("unpaid") // "unpaid" | "paid" | "credit"
+  paymentMethod String? // "cash" | "card" | "qr" | "credit" | "room_bill"
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  booking     Booking?  @relation(fields: [bookingId], references: [id])
+  items       OrderItem[]
+}
+
+model OrderItem {
+  id        Int      @id @default(autoincrement())
+  orderId   Int
+  menuItemId Int
+  quantity  Int
+  price     Float
+  subtotal  Float
+  createdAt DateTime @default(now())
+  
+  order     RestaurantOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem  RestaurantMenuItem @relation(fields: [menuItemId], references: [id])
+}
+
+// ============================================
+// INVENTORY MANAGEMENT
+// ============================================
+
+model InventoryItem {
+  id             Int       @id @default(autoincrement())
+  menuItemId     Int?      @unique // Link to menu item (optional)
+  name           String    @unique
+  unit           String    // "pieces" | "bottles" | "kg" | "liters"
+  currentStock   Float     @default(0)
+  minStock       Float     @default(0) // Alert threshold
+  maxStock       Float?
+  reorderPoint   Float?
+  unitPrice      Float     @default(0)
+  category       String?   // "beverages" | "food_items" | "supplies"
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  
+  menuItem       RestaurantMenuItem? @relation(fields: [menuItemId], references: [id])
+  transactions   InventoryTransaction[]
+}
+
+model InventoryTransaction {
+  id            Int       @id @default(autoincrement())
+  inventoryItemId Int
+  type          String    // "purchase" | "sale" | "adjustment" | "waste"
+  quantity      Float
+  unitPrice     Float?
+  totalCost     Float?
+  referenceType String?   // "order" | "manual" | "invoice"
+  referenceId   String?
+  notes         String?
+  performedBy   String?   // Admin name
+  createdAt     DateTime  @default(now())
+  
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+}
+
+// ============================================
+// ACCOUNT MANAGEMENT SYSTEM (AMS)
+// ============================================
+
+model AccountTransaction {
+  id              Int       @id @default(autoincrement())
+  date            String    // BS date string
+  dateAD          DateTime  // AD date for sorting
+  type            String    // "income" | "expense"
+  category        String    // "room_booking" | "restaurant" | "bar" | "salary" | "utilities" | "supplies" | "other"
+  description     String
+  amount          Float
+  currency        String    @default("NPR")
+  exchangeRate    Float?    @default(1)
+  amountNPR       Float     // Converted to NPR
+  paymentMethod   String?   // "cash" | "card" | "bank_transfer" | "credit"
+  referenceType   String?   // "booking" | "order" | "manual"
+  referenceId     Int?
+  taxAmount       Float?    @default(0)
+  taxPercentage   Float?    @default(0)
+  notes           String?
+  createdBy       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+// ============================================
+// USER MANAGEMENT (Simple Admin Only)
+// ============================================
+
+model User {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique
+  password  String   // Will be hashed
+  role      String   @default("admin") // "admin" | "staff" (for future)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
