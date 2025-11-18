@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
 // DELETE /api/gallery/[id]
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const id = parseInt(params.id)
+    const { id: paramId } = await params
+    const id = parseInt(paramId)
     
     await prisma.galleryItem.delete({
       where: { id }

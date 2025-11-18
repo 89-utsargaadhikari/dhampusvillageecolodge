@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react"
 import { Trash2, Edit, Plus, X, Upload, Image as ImageIcon } from "lucide-react"
-import { getRooms, addRoom, updateRoom, deleteRoom, convertImageToBase64, type Room } from "@/lib/storage"
+import { convertImageToBase64, type Room } from "@/lib/storage"
+import { fetchRooms, createRoom, updateRoom as updateRoomAPI, deleteRoom as deleteRoomAPI } from "@/lib/api"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -28,8 +29,18 @@ export default function RoomsManager() {
   })
 
   useEffect(() => {
-    setRooms(getRooms())
+    loadData()
   }, [])
+  
+  const loadData = async () => {
+    try {
+      const roomsData = await fetchRooms()
+      setRooms(roomsData)
+    } catch (error) {
+      console.error('Failed to load rooms:', error)
+      alert('Failed to load rooms data')
+    }
+  }
 
   const handleOpenDialog = (room?: Room) => {
     if (room) {
@@ -78,7 +89,7 @@ export default function RoomsManager() {
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     // Parse room numbers
@@ -103,24 +114,29 @@ export default function RoomsManager() {
 
     try {
       if (editingRoom) {
-        updateRoom(editingRoom.id, roomData)
+        await updateRoomAPI(editingRoom.id, roomData)
       } else {
-        addRoom(roomData)
+        await createRoom(roomData)
       }
 
-      setRooms(getRooms())
+      await loadData()
       setIsDialogOpen(false)
       setEditingRoom(null)
     } catch (error) {
       console.error('Error saving room:', error)
-      // Error will be shown by the alert in saveRooms
+      alert('Failed to save room')
     }
   }
 
-  const handleDelete = (id: number) => {
+  const handleDelete = async (id: number) => {
     if (confirm("Are you sure you want to delete this room?")) {
-      deleteRoom(id)
-      setRooms(getRooms())
+      try {
+        await deleteRoomAPI(id)
+        await loadData()
+      } catch (error) {
+        console.error('Failed to delete room:', error)
+        alert('Failed to delete room')
+      }
     }
   }
 

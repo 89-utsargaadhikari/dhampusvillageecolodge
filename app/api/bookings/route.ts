@@ -34,6 +34,13 @@ export async function POST(request: NextRequest) {
       }
     })
     
+    // Add notification for website bookings
+    if (body.bookingSource === 'website') {
+      // We can't use notifications.ts directly in API routes, so we'll use a client-side approach
+      // The notification will be added when the booking manager loads
+      console.log('🔔 New website booking received - Notification needed!')
+    }
+    
     return NextResponse.json(booking, { status: 201 })
   } catch (error) {
     console.error('Error creating booking:', error)

@@ -2,9 +2,9 @@ import { Facebook, Instagram, Linkedin, Twitter } from "lucide-react"
 
 export default function Footer() {
   return (
-    <footer className="bg-dark text-white py-16">
+    <footer className="bg-dark text-white pt-8 pb-4">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid md:grid-cols-4 gap-12 mb-12">
+        <div className="grid md:grid-cols-4 gap-8 mb-8">
           {/* Brand */}
           <div>
             <div className="flex items-center gap-3 mb-4">
@@ -88,7 +88,7 @@ export default function Footer() {
           </div>
         </div>
 
-        <div className="border-t border-white/10 pt-8 text-center text-sm text-white/60">
+        <div className="border-t border-white/10 pt-4 text-center text-sm text-white/60">
           <p>&copy; 2025 Dhampus Eco Lodge. All rights reserved. | Crafted with luxury in mind</p>
         </div>
       </div>

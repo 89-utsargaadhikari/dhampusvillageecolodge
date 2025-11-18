@@ -37,8 +37,8 @@ export default function NotificationPanel({ onNotificationClick }: NotificationP
     window.addEventListener("notificationRead", handleNotificationChange)
     window.addEventListener("notificationDeleted", handleNotificationChange)
 
-    // Refresh every 30 seconds
-    const interval = setInterval(loadNotifications, 30000)
+    // GLOBAL: Refresh every 5 seconds to check for new notifications from ANY page
+    const interval = setInterval(loadNotifications, 5000)
 
     return () => {
       window.removeEventListener("notificationAdded", handleNotificationChange)
