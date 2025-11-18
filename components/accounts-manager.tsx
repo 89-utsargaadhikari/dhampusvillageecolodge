@@ -10,21 +10,34 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { 
-  getCreditAccounts, 
-  addCreditAccount, 
-  addPayment, 
-  updateCreditAccount,
-  markReminderSent,
-  getOutstandingAccounts,
-  getOverdueAccounts,
-  getTotalOutstanding,
-  getTotalOverdue,
-  getCreditHistoryByGuest,
-  getCollectionReport,
-  type CreditAccount 
-} from "@/lib/credit-management"
+// Credit management now fully database-driven
 import { addNotification } from "@/lib/notifications"
+import { 
+  fetchAccountTransactions,
+  createAccountTransaction,
+  deleteAccountTransaction,
+  fetchCreditAccounts,
+  createCreditAccount,
+  updateCreditAccount as updateCreditAPI,
+  addCreditPayment
+} from "@/lib/api"
+
+interface CreditAccount {
+  id: number
+  guestName: string
+  guestPhone: string
+  guestEmail: string | null
+  creditAmount: number
+  paidAmount: number
+  outstandingBalance: number
+  creditDate: string
+  dueDate: string
+  status: string
+  linkedBookingId: number | null
+  notes: string | null
+  lastReminderSent: string | null
+  payments: any[]
+}
 
 interface Transaction {
   id: number
@@ -52,32 +65,65 @@ export default function AccountsManager() {
   useEffect(() => {
     loadData()
     
-    // Listen for credit account updates
-    const handleCreditUpdate = () => loadData()
-    window.addEventListener("creditAccountsUpdated", handleCreditUpdate)
-    return () => window.removeEventListener("creditAccountsUpdated", handleCreditUpdate)
+    // Auto-refresh every 10 seconds
+    const interval = setInterval(loadData, 10000)
+    
+    // Listen for credit account updates & import events
+    const handleUpdate = () => loadData()
+    window.addEventListener("creditAccountsUpdated", handleUpdate)
+    window.addEventListener("transactionsImported", handleUpdate)
+    window.addEventListener("storage", handleUpdate)
+    
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener("creditAccountsUpdated", handleUpdate)
+      window.removeEventListener("transactionsImported", handleUpdate)
+      window.removeEventListener("storage", handleUpdate)
+    }
   }, [])
   
-  const loadData = () => {
-    const saved = localStorage.getItem("account_transactions")
-    if (saved) setTransactions(JSON.parse(saved))
-    setCreditAccounts(getCreditAccounts())
+  const loadData = async () => {
+    try {
+      const [transactionsData, creditsData] = await Promise.all([
+        fetchAccountTransactions(),
+        fetchCreditAccounts()
+      ])
+      setTransactions(transactionsData)
+      setCreditAccounts(creditsData)
+    } catch (error) {
+      console.error('Failed to load data:', error)
+    }
   }
 
-  const saveTransactions = (txns: Transaction[]) => {
-    localStorage.setItem("account_transactions", JSON.stringify(txns))
-    setTransactions(txns)
+  const handleAddTransaction = async (txn: Omit<Transaction, "id">) => {
+    try {
+      await createAccountTransaction({
+        date: txn.date,
+        type: txn.type,
+        category: txn.category,
+        description: txn.description,
+        amount: txn.amount,
+        currency: txn.currency || 'NPR',
+        paymentMethod: txn.paymentMethod,
+        notes: txn.notes
+      })
+      setIsDialogOpen(false)
+      loadData()
+    } catch (error) {
+      console.error('Failed to add transaction:', error)
+      alert('Failed to add transaction')
+    }
   }
 
-  const handleAddTransaction = (txn: Omit<Transaction, "id">) => {
-    const newTxn = { ...txn, id: Date.now() }
-    saveTransactions([newTxn, ...transactions])
-    setIsDialogOpen(false)
-  }
-
-  const handleDelete = (id: number) => {
+  const handleDelete = async (id: number) => {
     if (confirm("Delete this transaction?")) {
-      saveTransactions(transactions.filter(t => t.id !== id))
+      try {
+        await deleteAccountTransaction(id)
+        loadData()
+      } catch (error) {
+        console.error('Failed to delete transaction:', error)
+        alert('Failed to delete transaction')
+      }
     }
   }
 
@@ -113,42 +159,55 @@ export default function AccountsManager() {
     link.click()
   }
 
-  const handleAddCredit = (credit: Omit<CreditAccount, "id" | "transactions" | "balanceAmount" | "status">) => {
-    addCreditAccount(credit)
-    loadData()
-    setIsCreditDialogOpen(false)
+  const handleAddCredit = async (credit: any) => {
+    try {
+      await createCreditAccount(credit)
+      await loadData()
+      setIsCreditDialogOpen(false)
     
-    // Add notification for overdue tracking
-    const daysUntilDue = Math.ceil((new Date(credit.dueDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
-    if (daysUntilDue <= 7) {
-      addNotification(
-        "payment",
-        "Credit Account Created",
-        `${credit.guestName} - NPR ${credit.totalAmount} due in ${daysUntilDue} days`,
-        "high",
-        "accounts"
-      )
+      // Add notification for overdue tracking
+      const daysUntilDue = Math.ceil((new Date(credit.dueDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+      if (daysUntilDue <= 7) {
+        addNotification(
+          "payment",
+          "Credit Account Created",
+          `${credit.guestName} - NPR ${credit.creditAmount} due in ${daysUntilDue} days`,
+          "high",
+          "accounts"
+        )
+      }
+    } catch (error) {
+      console.error('Failed to add credit account:', error)
+      alert('Failed to add credit account')
     }
   }
   
-  const handlePayment = (accountId: string, amount: number, method: any, description: string) => {
-    addPayment(accountId, amount, method, description, sessionStorage.getItem("admin_username") || "Admin")
-    loadData()
-    setIsPaymentDialogOpen(false)
-    setSelectedAccount(null)
+  
+  const handleSendReminder = async (account: CreditAccount) => {
+    try {
+      await updateCreditAPI(account.id, {
+        lastReminderSent: new Date().toISOString().split("T")[0]
+      })
+      await loadData()
+      
+      alert(`📧 Reminder sent to ${account.guestName}\n\nPhone: ${account.guestPhone}\nEmail: ${account.guestEmail}\nBalance: NPR ${account.outstandingBalance}\n\n(In production, this will send actual SMS/Email)`)
+    } catch (error) {
+      console.error('Failed to send reminder:', error)
+      alert('Failed to send reminder')
+    }
   }
   
-  const handleSendReminder = (account: CreditAccount) => {
-    // In real app, this would send SMS/Email
-    markReminderSent(account.id)
-    loadData()
-    
-    alert(`📧 Reminder sent to ${account.guestName}\n\nPhone: ${account.guestPhone}\nEmail: ${account.guestEmail}\nBalance: NPR ${account.balanceAmount}\n\n(In production, this will send actual SMS/Email)`)
-  }
-  
-  const collectionReport = getCollectionReport()
-  const outstandingAccounts = getOutstandingAccounts()
-  const overdueAccounts = getOverdueAccounts()
+  // Calculate credit stats from loaded data
+  const outstandingAccounts = creditAccounts.filter(c => c.status !== 'paid')
+  const overdueAccounts = creditAccounts.filter(c => {
+    const isOverdue = new Date(c.dueDate) < new Date()
+    return c.status !== 'paid' && isOverdue
+  })
+  const totalOutstanding = creditAccounts.reduce((sum, c) => sum + c.outstandingBalance, 0)
+  const totalOverdue = overdueAccounts.reduce((sum, c) => sum + c.outstandingBalance, 0)
+  const totalCredit = creditAccounts.reduce((sum, c) => sum + c.creditAmount, 0)
+  const totalCollected = creditAccounts.reduce((sum, c) => sum + c.paidAmount, 0)
+  const collectionRate = totalCredit > 0 ? (totalCollected / totalCredit) * 100 : 0
   
   const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
 
@@ -321,8 +380,8 @@ export default function AccountsManager() {
                 <CardTitle className="text-sm font-medium text-blue-700">Total Outstanding</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-2xl font-bold text-blue-900">NPR {getTotalOutstanding().toLocaleString()}</p>
-                <p className="text-xs text-blue-600 mt-1">{outstandingAccounts.length} accounts</p>
+                <p className="text-2xl font-bold text-blue-900">NPR {totalOutstanding.toLocaleString()}</p>
+                <p className="text-xs text-blue-600 mt-1">{creditAccounts.filter(a => a.outstandingBalance > 0).length} accounts</p>
               </CardContent>
             </Card>
             
@@ -334,7 +393,7 @@ export default function AccountsManager() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-2xl font-bold text-red-900">NPR {getTotalOverdue().toLocaleString()}</p>
+                <p className="text-2xl font-bold text-red-900">NPR {totalOverdue.toLocaleString()}</p>
                 <p className="text-xs text-red-600 mt-1">{overdueAccounts.length} accounts</p>
               </CardContent>
             </Card>
@@ -344,8 +403,8 @@ export default function AccountsManager() {
                 <CardTitle className="text-sm font-medium text-green-700">Collection Rate</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-2xl font-bold text-green-900">{collectionReport.collectionRate}%</p>
-                <p className="text-xs text-green-600 mt-1">{collectionReport.paidAccounts} of {collectionReport.totalAccounts} paid</p>
+                <p className="text-2xl font-bold text-green-900">{collectionRate.toFixed(1)}%</p>
+                <p className="text-xs text-green-600 mt-1">{creditAccounts.filter(a => a.status === 'paid').length} of {creditAccounts.length} paid</p>
               </CardContent>
             </Card>
             
@@ -354,8 +413,8 @@ export default function AccountsManager() {
                 <CardTitle className="text-sm font-medium text-purple-700">Total Collected</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-2xl font-bold text-purple-900">NPR {collectionReport.totalCollected.toLocaleString()}</p>
-                <p className="text-xs text-purple-600 mt-1">of NPR {collectionReport.totalCreditGiven.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-purple-900">NPR {totalCollected.toLocaleString()}</p>
+                <p className="text-xs text-purple-600 mt-1">of NPR {totalCredit.toLocaleString()}</p>
               </CardContent>
             </Card>
           </div>
@@ -369,7 +428,7 @@ export default function AccountsManager() {
                   <div className="flex-1">
                     <h4 className="font-semibold text-red-900 mb-2">⚠️ Overdue Payments Alert</h4>
                     <p className="text-sm text-red-700 mb-3">
-                      You have {overdueAccounts.length} overdue account(s) totaling NPR {getTotalOverdue().toLocaleString()}. 
+                      You have {overdueAccounts.length} overdue account(s) totaling NPR {totalOverdue.toLocaleString()}. 
                       Consider sending payment reminders.
                     </p>
                     <div className="flex gap-2">
@@ -439,9 +498,9 @@ export default function AccountsManager() {
                               <div>{account.guestPhone}</div>
                               <div className="text-xs text-gray-500">{account.guestEmail}</div>
                             </td>
-                            <td className="px-4 py-3 font-semibold">NPR {account.totalAmount.toLocaleString()}</td>
+                            <td className="px-4 py-3 font-semibold">NPR {account.creditAmount.toLocaleString()}</td>
                             <td className="px-4 py-3 text-green-600">NPR {account.paidAmount.toLocaleString()}</td>
-                            <td className="px-4 py-3 font-bold text-red-600">NPR {account.balanceAmount.toLocaleString()}</td>
+                            <td className="px-4 py-3 font-bold text-red-600">NPR {account.outstandingBalance.toLocaleString()}</td>
                             <td className="px-4 py-3">
                               <div className="text-sm">{new Date(account.dueDate).toLocaleDateString()}</div>
                               {isOverdue && (
@@ -512,19 +571,19 @@ export default function AccountsManager() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div>
                   <p className="text-gray-600">Total Credit Given</p>
-                  <p className="text-lg font-bold">NPR {collectionReport.totalCreditGiven.toLocaleString()}</p>
+                  <p className="text-lg font-bold">NPR {totalCredit.toLocaleString()}</p>
                 </div>
                 <div>
                   <p className="text-gray-600">Total Collected</p>
-                  <p className="text-lg font-bold text-green-600">NPR {collectionReport.totalCollected.toLocaleString()}</p>
+                  <p className="text-lg font-bold text-green-600">NPR {totalCollected.toLocaleString()}</p>
                 </div>
                 <div>
                   <p className="text-gray-600">Outstanding</p>
-                  <p className="text-lg font-bold text-red-600">NPR {collectionReport.totalOutstanding.toLocaleString()}</p>
+                  <p className="text-lg font-bold text-red-600">NPR {totalOutstanding.toLocaleString()}</p>
                 </div>
                 <div>
                   <p className="text-gray-600">Success Rate</p>
-                  <p className="text-lg font-bold text-blue-600">{collectionReport.collectionRate}%</p>
+                  <p className="text-lg font-bold text-blue-600">{collectionRate.toFixed(1)}%</p>
                 </div>
               </div>
             </CardContent>
@@ -652,7 +711,7 @@ export default function AccountsManager() {
               guestName: formData.get("guestName") as string,
               guestEmail: formData.get("guestEmail") as string,
               guestPhone: formData.get("guestPhone") as string,
-              totalAmount: parseFloat(formData.get("totalAmount") as string),
+              creditAmount: parseFloat(formData.get("creditAmount") as string),
               paidAmount: parseFloat(formData.get("paidAmount") as string) || 0,
               creditDate: formData.get("creditDate") as string,
               dueDate: formData.get("dueDate") as string,
@@ -678,8 +737,8 @@ export default function AccountsManager() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="totalAmount">Total Amount (NPR) *</Label>
-                <Input id="totalAmount" name="totalAmount" type="number" step="0.01" required />
+                <Label htmlFor="creditAmount">Total Amount (NPR) *</Label>
+                <Input id="creditAmount" name="creditAmount" type="number" step="0.01" required />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="paidAmount">Paid Amount (NPR)</Label>
@@ -733,7 +792,7 @@ export default function AccountsManager() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-600">Total Amount:</span>
-                  <span className="font-semibold">NPR {selectedAccount.totalAmount.toLocaleString()}</span>
+                  <span className="font-semibold">NPR {selectedAccount.creditAmount.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-600">Already Paid:</span>
@@ -741,7 +800,7 @@ export default function AccountsManager() {
                 </div>
                 <div className="flex justify-between border-t pt-2">
                   <span className="text-sm text-gray-600">Balance Due:</span>
-                  <span className="text-red-600 font-bold text-lg">NPR {selectedAccount.balanceAmount.toLocaleString()}</span>
+                  <span className="text-red-600 font-bold text-lg">NPR {selectedAccount.outstandingBalance.toLocaleString()}</span>
                 </div>
               </div>
 
@@ -750,8 +809,8 @@ export default function AccountsManager() {
                 const formData = new FormData(e.currentTarget)
                 const amount = parseFloat(formData.get("amount") as string)
                 
-                if (amount > selectedAccount.balanceAmount) {
-                  alert(`Payment amount cannot exceed balance of NPR ${selectedAccount.balanceAmount}`)
+                if (amount > selectedAccount.outstandingBalance) {
+                  alert(`Payment amount cannot exceed balance of NPR ${selectedAccount.outstandingBalance}`)
                   return
                 }
                 
@@ -764,14 +823,14 @@ export default function AccountsManager() {
               }} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="amount">Payment Amount (NPR) *</Label>
-                  <Input 
-                    id="amount" 
-                    name="amount" 
-                    type="number" 
-                    step="0.01" 
-                    max={selectedAccount.balanceAmount}
+                  <Input
+                    id="amount"
+                    name="amount"
+                    type="number"
+                    step="0.01"
+                    max={selectedAccount.outstandingBalance}
                     required 
-                    placeholder={`Max: ${selectedAccount.balanceAmount}`}
+                    placeholder={`Max: ${selectedAccount.outstandingBalance}`}
                   />
                   <div className="flex gap-2">
                     <Button 
@@ -780,7 +839,7 @@ export default function AccountsManager() {
                       variant="outline"
                       onClick={() => {
                         const input = document.getElementById("amount") as HTMLInputElement
-                        if (input) input.value = selectedAccount.balanceAmount.toString()
+                        if (input) input.value = selectedAccount.outstandingBalance.toString()
                       }}
                     >
                       Full Amount
@@ -791,7 +850,7 @@ export default function AccountsManager() {
                       variant="outline"
                       onClick={() => {
                         const input = document.getElementById("amount") as HTMLInputElement
-                        if (input) input.value = (selectedAccount.balanceAmount / 2).toString()
+                        if (input) input.value = (selectedAccount.outstandingBalance / 2).toString()
                       }}
                     >
                       Half
@@ -875,11 +934,11 @@ export default function AccountsManager() {
                     </div>
                     <div>
                       <p className="text-gray-600">Total Amount</p>
-                      <p className="text-lg font-bold">NPR {selectedAccount.totalAmount.toLocaleString()}</p>
+                      <p className="text-lg font-bold">NPR {selectedAccount.creditAmount.toLocaleString()}</p>
                     </div>
                     <div>
                       <p className="text-gray-600">Balance</p>
-                      <p className="text-lg font-bold text-red-600">NPR {selectedAccount.balanceAmount.toLocaleString()}</p>
+                      <p className="text-lg font-bold text-red-600">NPR {selectedAccount.outstandingBalance.toLocaleString()}</p>
                     </div>
                   </div>
                   {selectedAccount.notes && (

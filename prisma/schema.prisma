@@ -6,7 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -116,34 +116,37 @@ model RestaurantMenuItem {
 }
 
 model RestaurantOrder {
-  id          Int       @id @default(autoincrement())
-  orderNumber String    @unique
-  bookingId   Int?      // Link to room booking (optional)
-  roomNumber  String?   // For direct room service
-  guestName   String?
-  orderType   String    // "room_service" | "restaurant" | "bar"
-  status      String    @default("pending") // "pending" | "confirmed" | "completed" | "cancelled"
-  subtotal    Float
-  tax         Float     @default(0)
-  total       Float
-  paymentStatus String  @default("unpaid") // "unpaid" | "paid" | "credit"
-  paymentMethod String? // "cash" | "card" | "qr" | "credit" | "room_bill"
-  notes       String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id            Int       @id @default(autoincrement())
+  orderNumber   String    @unique
+  orderDate     DateTime? @default(now())
+  bookingId     Int?      // Link to room booking (optional)
+  roomNumber    String?   // For direct room service
+  guestName     String?
+  orderType     String?   @default("room_service") // "room_service" | "restaurant" | "bar"
+  status        String    @default("pending") // "pending" | "confirmed" | "completed" | "cancelled"
+  subtotal      Float
+  tax           Float     @default(0)
+  taxPercentage Float?    @default(13)
+  total         Float
+  paymentStatus String    @default("unpaid") // "unpaid" | "paid" | "credit"
+  paymentMethod String?   // "cash" | "card" | "qr" | "credit" | "room_bill"
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   
   booking     Booking?  @relation(fields: [bookingId], references: [id])
   items       OrderItem[]
 }
 
 model OrderItem {
-  id        Int      @id @default(autoincrement())
-  orderId   Int
+  id         Int      @id @default(autoincrement())
+  orderId    Int
   menuItemId Int
-  quantity  Int
-  price     Float
-  subtotal  Float
-  createdAt DateTime @default(now())
+  name       String?
+  quantity   Int
+  price      Float
+  subtotal   Float
+  createdAt  DateTime @default(now())
   
   order     RestaurantOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   menuItem  RestaurantMenuItem @relation(fields: [menuItemId], references: [id])
@@ -194,14 +197,14 @@ model InventoryTransaction {
 model AccountTransaction {
   id              Int       @id @default(autoincrement())
   date            String    // BS date string
-  dateAD          DateTime  // AD date for sorting
+  dateAD          DateTime? // AD date for sorting
   type            String    // "income" | "expense"
   category        String    // "room_booking" | "restaurant" | "bar" | "salary" | "utilities" | "supplies" | "other"
   description     String
   amount          Float
   currency        String    @default("NPR")
   exchangeRate    Float?    @default(1)
-  amountNPR       Float     // Converted to NPR
+  amountNPR       Float?    @default(0) // Converted to NPR
   paymentMethod   String?   // "cash" | "card" | "bank_transfer" | "credit"
   referenceType   String?   // "booking" | "order" | "manual"
   referenceId     Int?
@@ -211,6 +214,43 @@ model AccountTransaction {
   createdBy       String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+}
+
+// ============================================
+// CREDIT/DEBT TRACKING
+// ============================================
+
+model CreditAccount {
+  id                 Int       @id @default(autoincrement())
+  guestName          String
+  guestEmail         String?
+  guestPhone         String
+  guestAddress       String?
+  creditAmount       Float     // Total credit given
+  paidAmount         Float     @default(0)
+  outstandingBalance Float     // Remaining balance
+  creditDate         DateTime  // When credit was given
+  dueDate            DateTime  // Payment due date
+  status             String    @default("unpaid") // "paid" | "partial" | "unpaid" | "overdue"
+  bookingId          Int?      // Optional link to booking
+  notes              String?
+  lastReminderSent   DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  
+  payments CreditPayment[]
+}
+
+model CreditPayment {
+  id               Int       @id @default(autoincrement())
+  creditAccountId  Int
+  amount           Float
+  paymentDate      DateTime  @default(now())
+  paymentMethod    String    // "cash" | "card" | "bank_transfer"
+  description      String?
+  createdAt        DateTime  @default(now())
+  
+  creditAccount CreditAccount @relation(fields: [creditAccountId], references: [id], onDelete: Cascade)
 }
 
 // ============================================
