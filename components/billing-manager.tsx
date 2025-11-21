@@ -178,8 +178,12 @@ Thank you for staying with us!
     if (!selectedBill) return
 
     try {
+      console.log('🔵 Starting checkout for booking:', selectedBill.booking.id)
+      
       // Mark booking as checked out
+      console.log('🔵 Updating booking status...')
       await updateBooking(selectedBill.booking.id, { status: "Checked Out" })
+      console.log('✅ Booking status updated')
       
       let paidAmount = 0
       let creditAmount = 0
@@ -187,6 +191,7 @@ Thank you for staying with us!
       
       // Add room booking income if paid, or create credit account if credit
       if (roomPaymentStatus === "paid") {
+        console.log('🔵 Creating room transaction...')
         await createAccountTransaction({
           date: new Date().toISOString().split("T")[0],
           type: "income",
@@ -196,6 +201,7 @@ Thank you for staying with us!
           currency: "NPR",
           paymentMethod: roomPaymentMethod
         })
+        console.log('✅ Room transaction created')
         paidAmount += selectedBill.roomCharges
         paymentSummary.push(`Room: NPR ${selectedBill.roomCharges.toFixed(2)} (${roomPaymentMethod.toUpperCase()})`)
       } else {
@@ -207,6 +213,7 @@ Thank you for staying with us!
       // Add restaurant income if any and if paid, or add to credit
       if (selectedBill.restaurantTotal > 0) {
         if (restaurantPaymentStatus === "paid") {
+          console.log('🔵 Creating restaurant transaction...')
           await createAccountTransaction({
             date: new Date().toISOString().split("T")[0],
             type: "income",
@@ -216,6 +223,7 @@ Thank you for staying with us!
             currency: "NPR",
             paymentMethod: restaurantPaymentMethod
           })
+          console.log('✅ Restaurant transaction created')
           paidAmount += selectedBill.restaurantTotal
           paymentSummary.push(`Restaurant: NPR ${selectedBill.restaurantTotal.toFixed(2)} (${restaurantPaymentMethod.toUpperCase()})`)
         } else {
@@ -225,9 +233,11 @@ Thank you for staying with us!
       }
       
       // Add taxes as income (split proportionally if mixed payment)
+      console.log('🔵 Processing taxes...')
       const taxTotal = selectedBill.serviceTax + selectedBill.vat
       if (roomPaymentStatus === "paid" && restaurantPaymentStatus === "paid") {
         // Both paid - record all taxes
+        console.log('🔵 Creating tax transaction (all paid)...')
         await createAccountTransaction({
           date: new Date().toISOString().split("T")[0],
           type: "income",
@@ -237,12 +247,15 @@ Thank you for staying with us!
           currency: "NPR",
           paymentMethod: roomPaymentMethod
         })
+        console.log('✅ Tax transaction created')
         paidAmount += taxTotal
       } else if (roomPaymentStatus === "credit" && restaurantPaymentStatus === "credit") {
         // Both credit - no tax recorded
+        console.log('🔵 Both on credit, adding tax to credit amount')
         creditAmount += taxTotal
       } else {
         // Mixed - split taxes proportionally
+        console.log('🔵 Creating tax transaction (partial)...')
         const paidRatio = paidAmount / (selectedBill.roomCharges + selectedBill.restaurantTotal)
         const taxPaid = taxTotal * paidRatio
         await createAccountTransaction({
@@ -254,28 +267,32 @@ Thank you for staying with us!
           currency: "NPR",
           paymentMethod: roomPaymentStatus === "paid" ? roomPaymentMethod : restaurantPaymentMethod
         })
+        console.log('✅ Tax transaction created')
         paidAmount += taxPaid
         creditAmount += taxTotal - taxPaid
       }
       
       // CREATE CREDIT ACCOUNT if there's any credit amount
       if (creditAmount > 0) {
+        console.log('🔵 Creating credit account...')
         const dueDate = new Date()
         dueDate.setDate(dueDate.getDate() + 30) // 30 days credit period
         
         await createCreditAccount({
           guestName: selectedBill.booking.guest,
-          guestContact: selectedBill.booking.phone || selectedBill.booking.email || "N/A",
+          guestPhone: selectedBill.booking.phone || "N/A",
           guestEmail: selectedBill.booking.email || "",
+          guestAddress: "",
           creditAmount: creditAmount,
           paidAmount: 0,
           outstandingBalance: creditAmount,
           creditDate: new Date().toISOString().split("T")[0],
           dueDate: dueDate.toISOString().split("T")[0],
-          status: 'pending',
-          linkedBookingId: selectedBill.booking.id,
+          status: 'unpaid',
+          bookingId: selectedBill.booking.id,
           notes: `Checkout credit - Room: ${roomPaymentStatus === "credit" ? `NPR ${selectedBill.roomCharges.toFixed(2)}` : "Paid"}, Restaurant: ${restaurantPaymentStatus === "credit" && selectedBill.restaurantTotal > 0 ? `NPR ${selectedBill.restaurantTotal.toFixed(2)}` : "Paid"}, Taxes: NPR ${(taxTotal * (creditAmount / selectedBill.totalAmount)).toFixed(2)}`
         })
+        console.log('✅ Credit account created')
         
         // Add notification for new credit account
         addNotification(
@@ -286,6 +303,8 @@ Thank you for staying with us!
           "accounts"
         )
       }
+      
+      console.log('✅ Checkout completed successfully!')
       
       // Build alert message
       let alertMessage = `✅ Guest checked out successfully!\n\n`
@@ -307,9 +326,10 @@ Thank you for staying with us!
       setShowPaymentDialog(false)
       setShowBillDialog(false)
       await loadData()
-    } catch (error) {
-      console.error('Failed to checkout:', error)
-      alert('Failed to complete checkout. Please try again.')
+    } catch (error: any) {
+      console.error('❌ Failed to checkout:', error)
+      console.error('Error details:', error.message, error.response)
+      alert(`Failed to complete checkout: ${error.message || 'Please try again.'}`)
     }
   }
 

@@ -30,23 +30,26 @@ export async function POST(request: NextRequest) {
     const order = await prisma.restaurantOrder.create({
       data: {
         orderNumber: body.orderNumber,
-        orderDate: new Date(body.orderDate),
+        orderDate: body.orderDate ? new Date(body.orderDate) : new Date(),
         roomNumber: body.roomNumber,
         guestName: body.guestName,
-        bookingId: body.bookingId,
-        subtotal: body.subtotal,
-        tax: body.tax,
-        taxPercentage: body.taxPercentage || 13,
-        total: body.total,
+        bookingId: body.bookingId || null,
+        subtotal: parseFloat(body.subtotal),
+        tax: parseFloat(body.tax),
+        taxPercentage: body.taxPercentage ? parseFloat(body.taxPercentage) : 13,
+        total: parseFloat(body.total),
         status: body.status || 'pending',
         orderType: body.orderType || 'room_service',
+        paymentStatus: body.paymentStatus || 'unpaid',
+        paymentMethod: body.paymentMethod || null,
+        notes: body.notes || null,
         items: {
           create: body.items.map((item: any) => ({
-            menuItemId: item.menuItemId,
+            menuItemId: parseInt(item.menuItemId),
             name: item.name,
-            quantity: item.quantity,
-            price: item.price,
-            subtotal: item.subtotal || (item.quantity * item.price)
+            quantity: parseInt(item.quantity),
+            price: parseFloat(item.price),
+            subtotal: item.subtotal ? parseFloat(item.subtotal) : (parseInt(item.quantity) * parseFloat(item.price))
           }))
         }
       },

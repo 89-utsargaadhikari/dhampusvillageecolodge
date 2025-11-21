@@ -20,25 +20,28 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
 
     // Calculate amountNPR if currency is not NPR
+    const amount = parseFloat(body.amount)
+    const exchangeRate = body.exchangeRate ? parseFloat(body.exchangeRate) : 1
     const amountNPR = body.currency === 'NPR' || !body.currency
-      ? body.amount
-      : body.amount * (body.exchangeRate || 1)
+      ? amount
+      : amount * exchangeRate
 
     const transaction = await prisma.accountTransaction.create({
       data: {
-        date: new Date(body.date),
+        date: body.date,  // Keep as string (BS date)
+        dateAD: body.dateAD ? new Date(body.dateAD) : new Date(),  // Convert to DateTime
         type: body.type,
         category: body.category,
         description: body.description || '',
-        amount: body.amount,
+        amount: amount,
         currency: body.currency || 'NPR',
         amountNPR: amountNPR,
-        exchangeRate: body.exchangeRate || 1,
+        exchangeRate: exchangeRate,
         paymentMethod: body.paymentMethod || null,
         referenceType: body.referenceType || 'manual',
-        referenceId: body.referenceId || null,
-        taxAmount: body.taxAmount || 0,
-        taxPercentage: body.taxPercentage || 0,
+        referenceId: body.referenceId ? parseInt(body.referenceId) : null,
+        taxAmount: body.taxAmount ? parseFloat(body.taxAmount) : 0,
+        taxPercentage: body.taxPercentage ? parseFloat(body.taxPercentage) : 0,
         notes: body.notes || ''
       }
     })

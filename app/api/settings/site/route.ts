@@ -25,6 +25,14 @@ export async function GET() {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
+    console.log('Received site settings update:', body)
+    
+    // Build update data with only valid fields
+    const updateData: any = {}
+    if (body.siteName) updateData.siteName = body.siteName
+    if (body.logo !== undefined) updateData.logo = body.logo || null
+    
+    console.log('Update data:', updateData)
     
     const existing = await prisma.siteSettings.findFirst()
     
@@ -32,18 +40,26 @@ export async function PUT(request: NextRequest) {
     if (existing) {
       settings = await prisma.siteSettings.update({
         where: { id: existing.id },
-        data: body
+        data: updateData
       })
     } else {
       settings = await prisma.siteSettings.create({
-        data: body
+        data: {
+          siteName: updateData.siteName || 'Dhampus Eco Lodge',
+          logo: updateData.logo || null
+        }
       })
     }
     
+    console.log('Settings saved:', settings)
     return NextResponse.json(settings)
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error updating site settings:', error)
-    return NextResponse.json({ error: 'Failed to update site settings' }, { status: 500 })
+    console.error('Error details:', error.message, error.code)
+    return NextResponse.json({ 
+      error: 'Failed to update site settings',
+      details: error.message 
+    }, { status: 500 })
   }
 }
 

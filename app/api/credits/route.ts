@@ -29,17 +29,17 @@ export async function POST(request: NextRequest) {
     const creditAccount = await prisma.creditAccount.create({
       data: {
         guestName: body.guestName,
-        guestEmail: body.guestEmail || '',
+        guestEmail: body.guestEmail || null,
         guestPhone: body.guestPhone,
-        guestAddress: body.guestAddress || '',
-        creditAmount: body.creditAmount,
-        paidAmount: body.paidAmount || 0,
-        outstandingBalance: body.creditAmount - (body.paidAmount || 0),
+        guestAddress: body.guestAddress || null,
+        creditAmount: parseFloat(body.creditAmount),
+        paidAmount: body.paidAmount ? parseFloat(body.paidAmount) : 0,
+        outstandingBalance: parseFloat(body.outstandingBalance || body.creditAmount - (body.paidAmount || 0)),
         creditDate: new Date(body.creditDate),
         dueDate: new Date(body.dueDate),
         status: body.status || 'unpaid',
-        bookingId: body.bookingId || null,
-        notes: body.notes || '',
+        bookingId: body.bookingId ? parseInt(body.bookingId) : null,
+        notes: body.notes || null,
         lastReminderSent: body.lastReminderSent ? new Date(body.lastReminderSent) : null
       }
     })

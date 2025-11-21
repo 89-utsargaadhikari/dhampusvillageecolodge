@@ -27,6 +27,16 @@ export async function GET() {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
+    console.log('Received hero settings update:', body)
+    
+    // Build update data with only valid fields
+    const updateData: any = {}
+    if (body.backgroundType) updateData.backgroundType = body.backgroundType
+    if (body.backgroundUrl !== undefined) updateData.backgroundUrl = body.backgroundUrl || null
+    if (body.title) updateData.title = body.title
+    if (body.subtitle) updateData.subtitle = body.subtitle
+    
+    console.log('Update data:', updateData)
     
     const existing = await prisma.heroSettings.findFirst()
     
@@ -34,18 +44,28 @@ export async function PUT(request: NextRequest) {
     if (existing) {
       settings = await prisma.heroSettings.update({
         where: { id: existing.id },
-        data: body
+        data: updateData
       })
     } else {
       settings = await prisma.heroSettings.create({
-        data: body
+        data: {
+          backgroundType: updateData.backgroundType || 'image',
+          backgroundUrl: updateData.backgroundUrl || null,
+          title: updateData.title || 'Welcome to Dhampus Eco Lodge',
+          subtitle: updateData.subtitle || 'Experience luxury in the heart of the Himalayas'
+        }
       })
     }
     
+    console.log('Settings saved:', settings)
     return NextResponse.json(settings)
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error updating hero settings:', error)
-    return NextResponse.json({ error: 'Failed to update hero settings' }, { status: 500 })
+    console.error('Error details:', error.message, error.code)
+    return NextResponse.json({ 
+      error: 'Failed to update hero settings',
+      details: error.message 
+    }, { status: 500 })
   }
 }
 

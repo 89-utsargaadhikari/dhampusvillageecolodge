@@ -41,6 +41,22 @@ export async function POST(request: NextRequest) {
       }
     })
     
+    // Create room inventory entries for each room number
+    if (body.roomNumbers && body.roomNumbers.length > 0) {
+      const inventoryData = body.roomNumbers.map((roomNumber: string) => ({
+        roomNumber: roomNumber.trim(),
+        roomType: body.name,
+        roomTypeId: room.id,
+        floor: null,
+        notes: null
+      }))
+      
+      await prisma.roomInventory.createMany({
+        data: inventoryData,
+        skipDuplicates: true
+      })
+    }
+    
     return NextResponse.json(room, { status: 201 })
   } catch (error) {
     console.error('Error creating room:', error)

@@ -126,15 +126,19 @@ export default function RestaurantManager() {
       
       const orderPayload = {
         orderNumber: `ORD-${Date.now()}`,
+        orderDate: new Date().toISOString(),
         roomNumber: orderData.roomNumber,
         guestName: orderData.guestName,
         bookingId: bookings.find((b: any) => b.roomNumber === orderData.roomNumber)?.id || null,
+        orderType: "room_service",
         items: orderData.items,
         subtotal,
         tax,
         taxPercentage: orderData.taxPercentage,
         total,
-        status: "pending"
+        status: "pending",
+        paymentStatus: "unpaid",
+        paymentMethod: null
       }
       
       console.log('🔵 Frontend: Sending payload to API', orderPayload)
