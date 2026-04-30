@@ -7,10 +7,12 @@ import Rooms from "@/components/rooms"
 import Gallery from "@/components/gallery"
 import TreeBorder from "@/components/tree-border"
 import Cta from "@/components/cta"
+import ScrollProgress from "@/components/scroll-progress"
 
 export default function Home() {
   return (
     <main className="min-h-screen m-0 p-0">
+      <ScrollProgress />
       <Header />
       <Hero />
       <About />

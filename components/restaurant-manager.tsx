@@ -39,6 +39,9 @@ interface Order {
   guestName: string
   items: { menuItemId: number; name: string; quantity: number; price: number }[]
   subtotal: number
+  discountType?: string | null
+  discountValue?: number | null
+  discountAmount?: number | null
   tax: number
   taxPercentage: number
   total: number
@@ -53,9 +56,13 @@ export default function RestaurantManager() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isOrderDialogOpen, setIsOrderDialogOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null)
+  const [editingOrder, setEditingOrder] = useState<Order | null>(null)
   const [bookings, setBookings] = useState<any[]>([])
   const [selectedItems, setSelectedItems] = useState<{ menuItemId: number; name: string; quantity: number; price: number }[]>([])
   const [taxPercentage, setTaxPercentage] = useState(13) // Default 13% VAT for Nepal
+  const [discountType, setDiscountType] = useState<"percentage" | "amount">("percentage")
+  const [discountValue, setDiscountValue] = useState(0)
+  const [orderType, setOrderType] = useState<"room_service" | "walk_in">("room_service")
 
   // Load data from database
   useEffect(() => {
@@ -116,23 +123,47 @@ export default function RestaurantManager() {
 
 
   // Order Management
+  const handleOpenEditOrder = (order: Order) => {
+    setEditingOrder(order)
+    setSelectedItems(order.items)
+    setTaxPercentage(order.taxPercentage)
+    setDiscountType((order.discountType as "percentage" | "amount") || "percentage")
+    setDiscountValue(order.discountValue || 0)
+    setIsOrderDialogOpen(true)
+  }
+
   const handleCreateOrder = async (orderData: any) => {
     try {
       console.log('🔵 Frontend: Starting order creation', orderData)
       
       const subtotal = orderData.items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0)
-      const tax = (subtotal * orderData.taxPercentage) / 100
-      const total = subtotal + tax
+      
+      // Calculate discount
+      let discountAmount = 0
+      if (orderData.discountValue > 0) {
+        if (orderData.discountType === "percentage") {
+          discountAmount = (subtotal * orderData.discountValue) / 100
+        } else {
+          discountAmount = orderData.discountValue
+        }
+      }
+      
+      const afterDiscount = subtotal - discountAmount
+      const tax = (afterDiscount * orderData.taxPercentage) / 100
+      const total = afterDiscount + tax
       
       const orderPayload = {
         orderNumber: `ORD-${Date.now()}`,
         orderDate: new Date().toISOString(),
-        roomNumber: orderData.roomNumber,
-        guestName: orderData.guestName,
-        bookingId: bookings.find((b: any) => b.roomNumber === orderData.roomNumber)?.id || null,
-        orderType: "room_service",
+        roomNumber: orderData.orderType === "walk_in" ? (orderData.tableNumber || "Walk-in") : orderData.roomNumber,
+        guestName: orderData.orderType === "walk_in" ? (orderData.guestName || "Walk-in Guest") : orderData.guestName,
+        bookingId: orderData.orderType === "walk_in" ? null : (bookings.find((b: any) => b.roomNumber === orderData.roomNumber)?.id || null),
+        orderType: orderData.orderType,
         items: orderData.items,
         subtotal,
+        discountType: orderData.discountType,
+        discountValue: orderData.discountValue,
+        discountAmount,
         tax,
         taxPercentage: orderData.taxPercentage,
         total,
@@ -150,7 +181,7 @@ export default function RestaurantManager() {
       addNotification(
         "order",
         "New Restaurant Order",
-        `Order #${orderPayload.orderNumber} - Room ${orderPayload.roomNumber} (${orderPayload.guestName}) - NPR ${total.toFixed(2)}`,
+        `Order #${orderPayload.orderNumber} - ${orderData.orderType === "walk_in" ? `Table ${orderData.tableNumber} • ${orderPayload.guestName}` : `Room ${orderPayload.roomNumber} (${orderPayload.guestName})`} - NPR ${total.toFixed(2)}`,
         "high",
         "restaurant"
       )
@@ -160,11 +191,67 @@ export default function RestaurantManager() {
       await loadData()
       setIsOrderDialogOpen(false)
       setSelectedItems([])
+      setDiscountType("percentage")
+      setDiscountValue(0)
+      setOrderType("room_service")
       alert('✅ Order created successfully!')
     } catch (error: any) {
       console.error('❌ Frontend: Failed to create order:', error)
       console.error('Error details:', error.message)
       alert(`❌ Failed to create order: ${error.message || 'Unknown error'}`)
+    }
+  }
+
+  const handleUpdateOrder = async (orderData: any) => {
+    if (!editingOrder) return
+    
+    try {
+      console.log('🔵 Frontend: Starting order update', orderData)
+      console.log('🔵 Editing order:', editingOrder)
+      
+      const subtotal = orderData.items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0)
+      
+      // Calculate discount
+      let discountAmount = 0
+      if (orderData.discountValue > 0) {
+        if (orderData.discountType === "percentage") {
+          discountAmount = (subtotal * orderData.discountValue) / 100
+        } else {
+          discountAmount = orderData.discountValue
+        }
+      }
+      
+      const afterDiscount = subtotal - discountAmount
+      const tax = (afterDiscount * orderData.taxPercentage) / 100
+      const total = afterDiscount + tax
+      
+      const orderPayload = {
+        items: orderData.items,
+        subtotal,
+        discountType: orderData.discountType,
+        discountValue: orderData.discountValue,
+        discountAmount,
+        tax,
+        taxPercentage: orderData.taxPercentage,
+        total,
+      }
+      
+      console.log('🔵 Frontend: Sending update payload to API', orderPayload)
+      
+      const result = await updateRestaurantOrder(editingOrder.id, orderPayload)
+      console.log('✅ Frontend: Order updated successfully', result)
+      
+      await loadData()
+      setIsOrderDialogOpen(false)
+      setSelectedItems([])
+      setEditingOrder(null)
+      setDiscountType("percentage")
+      setDiscountValue(0)
+      alert('✅ Order updated successfully!')
+    } catch (error: any) {
+      console.error('❌ Frontend: Failed to update order:', error)
+      console.error('Error details:', error.message, error)
+      alert(`❌ Failed to update order: ${error.message || 'Unknown error'}`)
     }
   }
 
@@ -269,9 +356,89 @@ export default function RestaurantManager() {
                       </div>
                       <div className="text-right">
                         <p className="text-2xl font-bold text-primary">NPR {order.total.toFixed(2)}</p>
-                        <Badge>{order.status}</Badge>
                       </div>
                     </div>
+                    
+                    {/* Status and Actions */}
+                    <div className="flex gap-2 mb-3">
+                      <Select
+                        value={order.status}
+                        onValueChange={async (value) => {
+                          try {
+                            await updateRestaurantOrder(order.id, { status: value })
+                            await loadData()
+                          } catch (error) {
+                            console.error('Failed to update order status:', error)
+                            alert('Failed to update order status')
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="w-[150px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pending">
+                            <div className="flex items-center">
+                              <div className="w-2 h-2 rounded-full bg-yellow-500 mr-2" />
+                              Pending
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="preparing">
+                            <div className="flex items-center">
+                              <div className="w-2 h-2 rounded-full bg-blue-500 mr-2" />
+                              Preparing
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="ready">
+                            <div className="flex items-center">
+                              <div className="w-2 h-2 rounded-full bg-green-500 mr-2" />
+                              Ready
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="delivered">
+                            <div className="flex items-center">
+                              <div className="w-2 h-2 rounded-full bg-gray-500 mr-2" />
+                              Delivered
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="cancelled">
+                            <div className="flex items-center">
+                              <div className="w-2 h-2 rounded-full bg-red-500 mr-2" />
+                              Cancelled
+                            </div>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => handleOpenEditOrder(order)}
+                      >
+                        <Edit className="w-4 h-4 mr-1" />
+                        Edit
+                      </Button>
+                      
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={async () => {
+                          if (confirm('Delete this order?')) {
+                            try {
+                              await deleteRestaurantOrder(order.id)
+                              await loadData()
+                            } catch (error) {
+                              console.error('Failed to delete order:', error)
+                              alert('Failed to delete order')
+                            }
+                          }
+                        }}
+                      >
+                        <Trash2 className="w-4 h-4 mr-1" />
+                        Delete
+                      </Button>
+                    </div>
+                    
                     <div className="border-t pt-3 space-y-1">
                       {order.items.map((item, idx) => (
                         <div key={idx} className="flex justify-between text-sm">
@@ -284,6 +451,14 @@ export default function RestaurantManager() {
                           <span className="text-gray-600">Subtotal:</span>
                           <span>NPR {order.subtotal.toFixed(2)}</span>
                         </div>
+                        {order.discountValue && order.discountValue > 0 && (
+                          <div className="flex justify-between text-sm text-green-700">
+                            <span className="text-gray-600">
+                              Discount ({order.discountType === "percentage" ? `${order.discountValue}%` : `NPR ${order.discountValue}`}):
+                            </span>
+                            <span>- NPR {(order.discountAmount || 0).toFixed(2)}</span>
+                          </div>
+                        )}
                         <div className="flex justify-between text-sm">
                           <span className="text-gray-600">Tax ({order.taxPercentage}%):</span>
                           <span>NPR {order.tax.toFixed(2)}</span>
@@ -430,14 +605,24 @@ export default function RestaurantManager() {
         </DialogContent>
       </Dialog>
 
-      {/* New Order Dialog */}
-      <Dialog open={isOrderDialogOpen} onOpenChange={setIsOrderDialogOpen}>
+      {/* New/Edit Order Dialog */}
+      <Dialog open={isOrderDialogOpen} onOpenChange={(open) => {
+        setIsOrderDialogOpen(open)
+        if (!open) {
+          setEditingOrder(null)
+          setSelectedItems([])
+          setTaxPercentage(13)
+          setDiscountType("percentage")
+          setDiscountValue(0)
+          setOrderType("room_service")
+        }
+      }}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Create New Order</DialogTitle>
-            {bookings.length === 0 && (
+            <DialogTitle>{editingOrder ? 'Edit Order' : 'Create New Order'}</DialogTitle>
+            {!editingOrder && orderType === "room_service" && bookings.length === 0 && (
               <p className="text-sm text-orange-600 bg-orange-50 p-2 rounded mt-2">
-                ⚠️ No checked-in guests available. Please check in a guest from the Bookings page first.
+                ⚠️ No checked-in guests available. Please check in a guest from the Bookings page first or select Walk-in order type.
               </p>
             )}
           </DialogHeader>
@@ -450,51 +635,137 @@ export default function RestaurantManager() {
               return
             }
             
-            handleCreateOrder({
-              roomNumber: formData.get("roomNumber") as string,
-              guestName: formData.get("guestName") as string,
-              items: selectedItems,
-              taxPercentage: parseFloat(formData.get("taxPercentage") as string)
-            })
+            // Validate room service orders have room number
+            if (!editingOrder && orderType === "room_service") {
+              const roomNumber = formData.get("roomNumber") as string
+              if (!roomNumber || roomNumber === "none") {
+                alert("Please select a room for room service orders")
+                return
+              }
+            }
+            
+            if (editingOrder) {
+              handleUpdateOrder({
+                items: selectedItems,
+                taxPercentage,
+                discountType,
+                discountValue
+              })
+            } else {
+              handleCreateOrder({
+                orderType,
+                roomNumber: formData.get("roomNumber") as string,
+                guestName: orderType === "walk_in" 
+                  ? (formData.get("walkInGuestName") as string)
+                  : (formData.get("guestName") as string),
+                tableNumber: orderType === "walk_in" ? (formData.get("tableNumber") as string) : undefined,
+                items: selectedItems,
+                taxPercentage,
+                discountType,
+                discountValue
+              })
+            }
           }} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            {/* Order Type Selection */}
+            {!editingOrder && (
               <div className="space-y-2">
-                <Label htmlFor="roomNumber">Room Number *</Label>
+                <Label>Order Type *</Label>
                 <Select 
-                  name="roomNumber" 
-                  required
-                  onValueChange={(value) => {
-                    // Auto-populate guest name when room is selected
-                    const selectedBooking = bookings.find(b => b.roomNumber === value)
-                    if (selectedBooking) {
-                      const guestNameInput = document.getElementById("guestName") as HTMLInputElement
-                      if (guestNameInput) {
-                        guestNameInput.value = selectedBooking.guest
-                      }
-                    }
-                  }}
+                  value={orderType} 
+                  onValueChange={(value: "room_service" | "walk_in") => setOrderType(value)}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select room" />
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {bookings.length > 0 ? (
-                      bookings.map((booking) => (
-                        <SelectItem key={booking.id} value={booking.roomNumber!}>
-                          Room {booking.roomNumber} - {booking.guest}
-                        </SelectItem>
-                      ))
-                    ) : (
-                      <SelectItem value="none" disabled>No checked-in guests available</SelectItem>
-                    )}
+                    <SelectItem value="room_service">🛎️ Room Service</SelectItem>
+                    <SelectItem value="walk_in">🚶 Walk-in / Dine-in</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+            )}
+
+            {/* Room & Guest Info - Only show for room service or when editing */}
+            {(orderType === "room_service" || editingOrder) && (
+              <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="roomNumber">Room Number *</Label>
+                {editingOrder ? (
+                  <Input 
+                    id="roomNumber"
+                    name="roomNumber" 
+                    value={editingOrder.roomNumber}
+                    disabled
+                    className="bg-gray-100"
+                  />
+                ) : (
+                  <Select 
+                    name="roomNumber" 
+                    required={orderType === "room_service"}
+                    onValueChange={(value) => {
+                      // Auto-populate guest name when room is selected
+                      const selectedBooking = bookings.find(b => b.roomNumber === value)
+                      if (selectedBooking) {
+                        const guestNameInput = document.getElementById("guestName") as HTMLInputElement
+                        if (guestNameInput) {
+                          guestNameInput.value = selectedBooking.guest
+                        }
+                      }
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select room" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {bookings.length > 0 ? (
+                        bookings.map((booking) => (
+                          <SelectItem key={booking.id} value={booking.roomNumber!}>
+                            Room {booking.roomNumber} - {booking.guest}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="none" disabled>No checked-in guests available</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="guestName">Guest Name *</Label>
-                <Input id="guestName" name="guestName" required readOnly className="bg-gray-50" />
+                <Input 
+                  id="guestName" 
+                  name="guestName" 
+                  defaultValue={editingOrder?.guestName || ''}
+                  required 
+                  readOnly 
+                  className="bg-gray-50" 
+                />
               </div>
             </div>
+            )}
+
+            {/* Walk-in specific fields */}
+            {orderType === "walk_in" && !editingOrder && (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="walkInGuestName">Guest Name</Label>
+                  <Input 
+                    id="walkInGuestName" 
+                    name="walkInGuestName" 
+                    placeholder="Enter guest name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="tableNumber">Table Number *</Label>
+                  <Input 
+                    id="tableNumber" 
+                    name="tableNumber" 
+                    placeholder="e.g., T1, T2, etc."
+                    required
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Menu Items Selection */}
             <div className="space-y-2">
@@ -559,23 +830,92 @@ export default function RestaurantManager() {
                       <span>Subtotal:</span>
                       <span>NPR {selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0).toFixed(2)}</span>
                     </div>
-                    <div className="flex justify-between text-sm items-center">
+                    
+                    {/* Discount */}
+                    <div className="space-y-2 mt-2 p-2 bg-white rounded">
+                      <div className="flex justify-between items-center text-sm">
+                        <span>Discount:</span>
+                        <Select
+                          value={discountType}
+                          onValueChange={(value: "percentage" | "amount") => setDiscountType(value)}
+                        >
+                          <SelectTrigger className="w-32 h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="percentage">Percentage %</SelectItem>
+                            <SelectItem value="amount">Amount NPR</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex justify-between items-center text-sm">
+                        <span>Discount Value:</span>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={discountValue}
+                            onChange={(e) => setDiscountValue(parseFloat(e.target.value) || 0)}
+                            className="w-24 h-8"
+                          />
+                          <span>{discountType === "percentage" ? "%" : "NPR"}</span>
+                        </div>
+                      </div>
+                      {discountValue > 0 && (
+                        <div className="flex justify-between text-sm text-green-700">
+                          <span>Discount Amount:</span>
+                          <span>
+                            - NPR {(() => {
+                              const subtotal = selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0)
+                              return discountType === "percentage" 
+                                ? ((subtotal * discountValue) / 100).toFixed(2)
+                                : discountValue.toFixed(2)
+                            })()}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="flex justify-between text-sm items-center mt-2">
                       <span>Tax:</span>
                       <div className="flex items-center gap-2">
                         <Input
                           name="taxPercentage"
                           type="number"
                           step="0.01"
-                          defaultValue={taxPercentage}
+                          value={taxPercentage}
+                          onChange={(e) => setTaxPercentage(parseFloat(e.target.value) || 0)}
                           className="w-20 h-8"
                         />
                         <span>%</span>
                       </div>
                     </div>
-                    <div className="flex justify-between font-bold text-lg pt-1">
+                    <div className="flex justify-between text-sm text-gray-600">
+                      <span>Tax Amount:</span>
+                      <span>
+                        NPR {(() => {
+                          const subtotal = selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0)
+                          const discountAmt = discountType === "percentage" 
+                            ? (subtotal * discountValue) / 100 
+                            : discountValue
+                          const afterDiscount = subtotal - discountAmt
+                          return ((afterDiscount * taxPercentage) / 100).toFixed(2)
+                        })()}
+                      </span>
+                    </div>
+                    <div className="flex justify-between font-bold text-lg pt-2 border-t border-blue-300">
                       <span>Total:</span>
                       <span className="text-primary">
-                        NPR {(selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0) * (1 + taxPercentage / 100)).toFixed(2)}
+                        NPR {(() => {
+                          const subtotal = selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0)
+                          const discountAmt = discountType === "percentage" 
+                            ? (subtotal * discountValue) / 100 
+                            : discountValue
+                          const afterDiscount = subtotal - discountAmt
+                          const tax = (afterDiscount * taxPercentage) / 100
+                          return (afterDiscount + tax).toFixed(2)
+                        })()}
                       </span>
                     </div>
                   </div>
@@ -587,11 +927,12 @@ export default function RestaurantManager() {
               <Button type="button" variant="outline" onClick={() => {
                 setIsOrderDialogOpen(false)
                 setSelectedItems([])
+                setEditingOrder(null)
               }} className="flex-1">
                 Cancel
               </Button>
               <Button type="submit" className="flex-1" disabled={selectedItems.length === 0}>
-                Create Order
+                {editingOrder ? 'Update Order' : 'Create Order'}
               </Button>
             </div>
           </form>

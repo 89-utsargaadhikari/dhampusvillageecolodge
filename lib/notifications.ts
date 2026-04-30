@@ -13,6 +13,27 @@ export interface Notification {
 
 const STORAGE_KEY = "admin_notifications"
 
+const sendWhatsAppCopy = async (
+  type: Notification["type"],
+  title: string,
+  message: string,
+  priority: Notification["priority"],
+) => {
+  if (typeof window === "undefined") return
+
+  try {
+    await fetch("/api/notifications/whatsapp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type, title, message, priority }),
+      keepalive: true,
+    })
+  } catch (error) {
+    // Don't block normal notifications if WhatsApp delivery fails.
+    console.error("WhatsApp notification failed:", error)
+  }
+}
+
 // Get all notifications
 export const getNotifications = (): Notification[] => {
   if (typeof window === "undefined") return []
@@ -88,6 +109,8 @@ export const addNotification = (
   }
   
   saveNotifications(notifications)
+
+  void sendWhatsAppCopy(type, title, message, priority)
   
   // Dispatch custom event for real-time updates
   if (typeof window !== "undefined") {

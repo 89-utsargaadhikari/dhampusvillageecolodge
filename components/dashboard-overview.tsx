@@ -25,6 +25,11 @@ export default function DashboardOverview() {
     restaurantRevenue: 0,
     lowStockItems: 0,
     accountBalance: 0,
+    cashPayments: 0,
+    cardPayments: 0,
+    qrPayments: 0,
+    bankTransfers: 0,
+    creditPayments: 0,
   })
   const [bookingData, setBookingData] = useState<{ month: string; bookings: number; revenue: number }[]>([])
   const [recentBookings, setRecentBookings] = useState<any[]>([])
@@ -80,6 +85,14 @@ export default function DashboardOverview() {
         return sum + (txn.type === "income" ? txn.amount : -txn.amount)
       }, 0)
 
+      // Calculate payment method breakdown
+      const incomeTransactions = transactions.filter((t: any) => t.type === "income")
+      const cashPayments = incomeTransactions.filter((t: any) => t.paymentMethod?.toLowerCase().includes("cash")).reduce((sum: number, t: any) => sum + t.amount, 0)
+      const cardPayments = incomeTransactions.filter((t: any) => t.paymentMethod?.toLowerCase().includes("card")).reduce((sum: number, t: any) => sum + t.amount, 0)
+      const qrPayments = incomeTransactions.filter((t: any) => t.paymentMethod?.toLowerCase().includes("qr")).reduce((sum: number, t: any) => sum + t.amount, 0)
+      const bankTransfers = incomeTransactions.filter((t: any) => t.paymentMethod?.toLowerCase().includes("bank") || t.paymentMethod?.toLowerCase().includes("transfer")).reduce((sum: number, t: any) => sum + t.amount, 0)
+      const creditPayments = incomeTransactions.filter((t: any) => t.paymentMethod?.toLowerCase().includes("credit")).reduce((sum: number, t: any) => sum + t.amount, 0)
+
       setStats({
         totalBookings,
         totalRevenue,
@@ -89,6 +102,11 @@ export default function DashboardOverview() {
         restaurantRevenue,
         lowStockItems,
         accountBalance,
+        cashPayments,
+        cardPayments,
+        qrPayments,
+        bankTransfers,
+        creditPayments,
       })
 
       // Group bookings by month
@@ -216,6 +234,35 @@ export default function DashboardOverview() {
             </div>
           </div>
         </button>
+      </div>
+
+      {/* Payment Methods Breakdown */}
+      <div className="bg-white rounded-lg p-6 shadow">
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          💳 Payment Methods Breakdown
+        </h3>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+            <p className="text-xs text-gray-600 mb-1">💵 Cash</p>
+            <p className="text-xl font-bold text-green-700">NPR {stats.cashPayments.toLocaleString()}</p>
+          </div>
+          <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+            <p className="text-xs text-gray-600 mb-1">💳 Card</p>
+            <p className="text-xl font-bold text-blue-700">NPR {stats.cardPayments.toLocaleString()}</p>
+          </div>
+          <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
+            <p className="text-xs text-gray-600 mb-1">📱 QR/Digital</p>
+            <p className="text-xl font-bold text-purple-700">NPR {stats.qrPayments.toLocaleString()}</p>
+          </div>
+          <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
+            <p className="text-xs text-gray-600 mb-1">🏦 Bank</p>
+            <p className="text-xl font-bold text-yellow-700">NPR {stats.bankTransfers.toLocaleString()}</p>
+          </div>
+          <div className="bg-red-50 p-4 rounded-lg border border-red-200">
+            <p className="text-xs text-gray-600 mb-1">📊 Credit</p>
+            <p className="text-xl font-bold text-red-700">NPR {stats.creditPayments.toLocaleString()}</p>
+          </div>
+        </div>
       </div>
 
       {/* Charts */}

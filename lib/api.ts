@@ -330,4 +330,51 @@ export const addCreditPayment = async (paymentData: any) => {
   return res.json()
 }
 
+// ============================================
+// BUSINESS PARTNERS
+// ============================================
+
+export const fetchBusinesses = async () => {
+  const res = await fetch('/api/business')
+  if (!res.ok) throw new Error('Failed to fetch businesses')
+  return res.json()
+}
+
+export const createBusiness = async (businessData: any) => {
+  const res = await fetch('/api/business', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(businessData)
+  })
+  if (!res.ok) throw new Error('Failed to create business')
+  return res.json()
+}
+
+export const updateBusiness = async (id: number, businessData: any) => {
+  const res = await fetch(`/api/business/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(businessData)
+  })
+  if (!res.ok) throw new Error('Failed to update business')
+  return res.json()
+}
+
+export const deleteBusiness = async (id: number) => {
+  const res = await fetch(`/api/business/${id}`, {
+    method: 'DELETE'
+  })
+  if (!res.ok) throw new Error('Failed to delete business')
+  return res.json()
+}
+
+export const importBusinesses = async (businesses: any[]) => {
+  const res = await fetch('/api/business/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ businesses })
+  })
+  if (!res.ok) throw new Error('Failed to import businesses')
+  return res.json()
+}
 

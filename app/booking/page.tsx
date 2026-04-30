@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { Calendar, Users, Mail, Phone, User, CreditCard, CheckCircle } from "lucide-react"
+import { Calendar, Users, Mail, Phone, User, CreditCard, CheckCircle, Sparkles, Star } from "lucide-react"
 import { type Room } from "@/lib/storage"
 import { fetchRooms, createBooking } from "@/lib/api"
 import { addNotification } from "@/lib/notifications"
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import ScrollProgress from "@/components/scroll-progress"
 
 export default function BookingPage() {
   const [rooms, setRooms] = useState<Room[]>([])
@@ -63,7 +64,6 @@ export default function BookingPage() {
       return
     }
 
-    // Validate dates
     const checkinDate = new Date(formData.checkin)
     const checkoutDate = new Date(formData.checkout)
     const today = new Date()
@@ -71,39 +71,33 @@ export default function BookingPage() {
     checkinDate.setHours(0, 0, 0, 0)
     checkoutDate.setHours(0, 0, 0, 0)
 
-    // Check if dates are provided
     if (!formData.checkin || !formData.checkout) {
       alert("⚠️ Please select check-in and check-out dates")
       return
     }
 
-    // Check if checkout is after checkin
     if (checkoutDate <= checkinDate) {
       alert("⚠️ Check-out date must be after check-in date!")
       return
     }
 
-    // Check if dates are in the past
     if (checkinDate < today) {
       alert("⚠️ Check-in date cannot be in the past!")
       return
     }
 
-    // Calculate minimum 1 night stay
     const nights = calculateNights()
     if (nights < 1) {
       alert("⚠️ Minimum stay is 1 night!")
       return
     }
 
-    // Validate guest capacity
     const guestCount = parseInt(formData.guests)
     if (guestCount > selectedRoom.capacity) {
-      alert(`⚠️ This room can accommodate a maximum of ${selectedRoom.capacity} guests. Please select a different room or reduce the number of guests.`)
+      alert(`⚠️ This room can accommodate a maximum of ${selectedRoom.capacity} guests.`)
       return
     }
 
-    // Validate contact information
     if (!formData.email.includes("@")) {
       alert("⚠️ Please enter a valid email address")
       return
@@ -129,7 +123,6 @@ export default function BookingPage() {
         bookingSource: "website",
       })
 
-      // CREATE NOTIFICATION IMMEDIATELY
       addNotification(
         "booking",
         "🌐 New Website Booking",
@@ -137,8 +130,6 @@ export default function BookingPage() {
         "high",
         "bookings"
       )
-
-      console.log("✅ Notification created for website booking:", formData.guest)
 
       setBookingId(newBooking.id.toString())
       setBookingComplete(true)
@@ -150,38 +141,62 @@ export default function BookingPage() {
 
   if (bookingComplete) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-primary/5 to-accent/5 flex items-center justify-center p-4">
-        <Card className="max-w-lg w-full">
-          <CardHeader className="text-center">
-            <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
-              <CheckCircle className="w-8 h-8 text-green-600" />
+      <div className="min-h-screen bg-gradient-to-br from-green-50 via-yellow-50 to-green-50 flex items-center justify-center p-4 animate-in fade-in duration-700">
+        <ScrollProgress />
+        <Card className="max-w-lg w-full shadow-2xl border-2 border-green-100 animate-in zoom-in duration-500">
+          <CardHeader className="text-center pb-8">
+            <div className="mx-auto w-20 h-20 bg-gradient-to-br from-green-400 to-green-600 rounded-full flex items-center justify-center mb-6 animate-in zoom-in duration-700 delay-200 shadow-lg">
+              <CheckCircle className="w-10 h-10 text-white animate-pulse" />
             </div>
-            <CardTitle className="text-2xl">Booking Request Submitted!</CardTitle>
-            <CardDescription>Your booking is pending confirmation</CardDescription>
+            <CardTitle className="text-3xl font-display bg-gradient-to-r from-green-600 to-yellow-600 bg-clip-text text-transparent animate-in slide-in-from-bottom duration-500 delay-300">
+              Booking Request Submitted!
+            </CardTitle>
+            <CardDescription className="text-lg mt-2 animate-in slide-in-from-bottom duration-500 delay-400">
+              Your journey to paradise begins
+            </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-              <p className="text-sm text-gray-600">Booking Reference:</p>
-              <p className="text-2xl font-bold text-primary">#{bookingId}</p>
+          <CardContent className="space-y-6 animate-in slide-in-from-bottom duration-500 delay-500">
+            <div className="bg-gradient-to-br from-green-50 to-yellow-50 rounded-xl p-6 space-y-3 border-2 border-green-200 shadow-inner">
+              <p className="text-sm text-gray-600 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-yellow-500" />
+                Booking Reference
+              </p>
+              <p className="text-3xl font-bold bg-gradient-to-r from-green-600 to-yellow-600 bg-clip-text text-transparent">
+                #{bookingId}
+              </p>
             </div>
             
-            <div className="space-y-2">
-              <p className="font-semibold">What's Next?</p>
-              <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
-                <li>We'll review your booking request</li>
-                <li>You'll receive a confirmation email within 24 hours</li>
-                <li>Check your booking status anytime</li>
+            <div className="space-y-3 bg-white rounded-xl p-6 border border-green-100">
+              <p className="font-semibold flex items-center gap-2 text-green-700">
+                <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
+                What's Next?
+              </p>
+              <ul className="text-sm text-gray-600 space-y-2">
+                <li className="flex items-start gap-2">
+                  <span className="text-green-500 mt-0.5">✓</span>
+                  <span>We'll review your booking request</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-green-500 mt-0.5">✓</span>
+                  <span>Confirmation email within 24 hours</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-green-500 mt-0.5">✓</span>
+                  <span>Check your booking status anytime</span>
+                </li>
               </ul>
             </div>
 
-            <div className="pt-4 space-y-2">
+            <div className="pt-4 space-y-3">
               <Link href={`/booking/status?email=${encodeURIComponent(formData.email)}`} className="block">
-                <Button className="w-full" variant="outline">
+                <Button className="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 shadow-lg hover:shadow-xl transition-all duration-300" size="lg">
                   Check Booking Status
                 </Button>
               </Link>
               <Link href="/" className="block">
-                <Button className="w-full">Return to Homepage</Button>
+                <Button className="w-full" variant="outline" size="lg">
+                  Return to Homepage
+                </Button>
               </Link>
             </div>
           </CardContent>
@@ -191,59 +206,74 @@ export default function BookingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 to-accent/5">
+    <div className="min-h-screen bg-gradient-to-br from-green-50 via-yellow-50 to-green-50">
+      <ScrollProgress />
       {/* Header */}
-      <header className="bg-white border-b sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center">
-              <span className="text-white font-display text-lg font-bold">D</span>
+      <header className="bg-white/80 backdrop-blur-md border-b border-green-100 sticky top-0 z-50 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-3 group">
+            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-green-600 to-yellow-500 flex items-center justify-center shadow-lg group-hover:shadow-xl transition-all duration-300 group-hover:scale-110">
+              <span className="text-white font-display text-xl font-bold">D</span>
             </div>
             <div>
-              <p className="font-display font-semibold text-primary">Dhampus Eco Lodge</p>
+              <p className="font-display font-bold text-green-700 text-lg">Dhampus Eco Lodge</p>
+              <p className="text-xs text-yellow-600">Luxury Himalayan Retreat</p>
             </div>
           </Link>
           <Link href="/booking/status">
-            <Button variant="outline" size="sm">Check Booking Status</Button>
+            <Button variant="outline" className="border-green-600 text-green-700 hover:bg-green-50 transition-all duration-300">
+              Check Booking Status
+            </Button>
           </Link>
         </div>
       </header>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="text-center mb-12">
-          <h1 className="text-4xl md:text-5xl font-display font-bold text-primary mb-4">Book Your Stay</h1>
-          <p className="text-lg text-gray-600">Experience luxury in the heart of the Himalayas</p>
+        <div className="text-center mb-12 animate-in fade-in slide-in-from-top duration-700">
+          <div className="inline-block mb-4">
+            <span className="text-yellow-500 text-4xl animate-pulse">✨</span>
+          </div>
+          <h1 className="text-5xl md:text-6xl font-display font-bold bg-gradient-to-r from-green-700 via-yellow-600 to-green-700 bg-clip-text text-transparent mb-4 animate-in slide-in-from-bottom duration-700 delay-100">
+            Book Your Himalayan Escape
+          </h1>
+          <p className="text-xl text-gray-600 animate-in slide-in-from-bottom duration-700 delay-200">
+            Experience luxury nestled in the heart of the Himalayas
+          </p>
         </div>
 
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Booking Form */}
-          <div className="lg:col-span-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Booking Details</CardTitle>
-                <CardDescription>Fill in your information to reserve your room</CardDescription>
+          <div className="lg:col-span-2 animate-in fade-in slide-in-from-left duration-700 delay-300">
+            <Card className="shadow-2xl border-2 border-green-100 hover:shadow-3xl transition-shadow duration-300">
+              <CardHeader className="bg-gradient-to-r from-green-50 to-yellow-50 border-b border-green-100">
+                <CardTitle className="text-2xl flex items-center gap-2 text-green-700">
+                  <Sparkles className="w-6 h-6 text-yellow-500" />
+                  Booking Details
+                </CardTitle>
+                <CardDescription>Fill in your information to reserve your luxurious stay</CardDescription>
               </CardHeader>
-              <CardContent>
-                <form onSubmit={handleSubmit} className="space-y-6">
+              <CardContent className="pt-6">
+                <form onSubmit={handleSubmit} className="space-y-8">
                   {/* Guest Information */}
-                  <div className="space-y-4">
-                    <h3 className="font-semibold text-lg flex items-center gap-2">
-                      <User size={20} />
+                  <div className="space-y-4 p-6 bg-gradient-to-br from-green-50/50 to-yellow-50/50 rounded-xl border border-green-100">
+                    <h3 className="font-semibold text-lg flex items-center gap-2 text-green-700">
+                      <User size={20} className="text-yellow-600" />
                       Guest Information
                     </h3>
                     <div className="grid md:grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label htmlFor="guest">Full Name *</Label>
+                        <Label htmlFor="guest" className="text-gray-700">Full Name *</Label>
                         <Input
                           id="guest"
                           value={formData.guest}
                           onChange={(e) => setFormData({ ...formData, guest: e.target.value })}
                           required
                           placeholder="John Doe"
+                          className="border-green-200 focus:border-green-500 focus:ring-green-500 transition-all duration-300"
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="email">Email Address *</Label>
+                        <Label htmlFor="email" className="text-gray-700">Email Address *</Label>
                         <Input
                           id="email"
                           type="email"
@@ -251,10 +281,11 @@ export default function BookingPage() {
                           onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                           required
                           placeholder="john@example.com"
+                          className="border-green-200 focus:border-green-500 focus:ring-green-500 transition-all duration-300"
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="phone">Phone Number *</Label>
+                        <Label htmlFor="phone" className="text-gray-700">Phone Number *</Label>
                         <Input
                           id="phone"
                           type="tel"
@@ -262,12 +293,13 @@ export default function BookingPage() {
                           onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                           required
                           placeholder="+1 234 567 8900"
+                          className="border-green-200 focus:border-green-500 focus:ring-green-500 transition-all duration-300"
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="guests">Number of Guests *</Label>
+                        <Label htmlFor="guests" className="text-gray-700">Number of Guests *</Label>
                         <Select value={formData.guests} onValueChange={(value) => setFormData({ ...formData, guests: value })}>
-                          <SelectTrigger>
+                          <SelectTrigger className="border-green-200 focus:border-green-500 focus:ring-green-500">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -283,14 +315,14 @@ export default function BookingPage() {
                   </div>
 
                   {/* Stay Dates */}
-                  <div className="space-y-4">
-                    <h3 className="font-semibold text-lg flex items-center gap-2">
-                      <Calendar size={20} />
+                  <div className="space-y-4 p-6 bg-gradient-to-br from-yellow-50/50 to-green-50/50 rounded-xl border border-yellow-100">
+                    <h3 className="font-semibold text-lg flex items-center gap-2 text-green-700">
+                      <Calendar size={20} className="text-yellow-600" />
                       Stay Dates
                     </h3>
                     <div className="grid md:grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label htmlFor="checkin">Check-in Date *</Label>
+                        <Label htmlFor="checkin" className="text-gray-700">Check-in Date *</Label>
                         <Input
                           id="checkin"
                           type="date"
@@ -298,10 +330,11 @@ export default function BookingPage() {
                           onChange={(e) => setFormData({ ...formData, checkin: e.target.value })}
                           min={new Date().toISOString().split("T")[0]}
                           required
+                          className="border-yellow-200 focus:border-yellow-500 focus:ring-yellow-500 transition-all duration-300"
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="checkout">Check-out Date *</Label>
+                        <Label htmlFor="checkout" className="text-gray-700">Check-out Date *</Label>
                         <Input
                           id="checkout"
                           type="date"
@@ -309,19 +342,26 @@ export default function BookingPage() {
                           onChange={(e) => setFormData({ ...formData, checkout: e.target.value })}
                           min={formData.checkin || new Date().toISOString().split("T")[0]}
                           required
+                          className="border-yellow-200 focus:border-yellow-500 focus:ring-yellow-500 transition-all duration-300"
                         />
                       </div>
                     </div>
                     {calculateNights() > 0 && (
-                      <p className="text-sm text-gray-600">
-                        Total nights: <span className="font-semibold">{calculateNights()}</span>
-                      </p>
+                      <div className="bg-white rounded-lg p-4 border-2 border-green-200 animate-in fade-in slide-in-from-left duration-300">
+                        <p className="text-sm text-gray-600 flex items-center justify-between">
+                          <span>Total nights:</span>
+                          <span className="text-2xl font-bold text-green-600">{calculateNights()}</span>
+                        </p>
+                      </div>
                     )}
                   </div>
 
                   {/* Room Selection */}
                   <div className="space-y-4">
-                    <h3 className="font-semibold text-lg">Select Your Room *</h3>
+                    <h3 className="font-semibold text-xl flex items-center gap-2 text-green-700">
+                      <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
+                      Select Your Luxurious Room *
+                    </h3>
                     <div className="grid gap-4">
                       {rooms.length === 0 ? (
                         <p className="text-center text-gray-500 py-8">No rooms available at the moment.</p>
@@ -330,24 +370,29 @@ export default function BookingPage() {
                           <div
                             key={room.id}
                             onClick={() => setSelectedRoom(room)}
-                            className={`border-2 rounded-lg p-4 cursor-pointer transition-all ${
+                            className={`group border-2 rounded-xl p-5 cursor-pointer transition-all duration-300 transform hover:scale-[1.02] ${
                               selectedRoom?.id === room.id
-                                ? "border-primary bg-primary/5"
-                                : "border-gray-200 hover:border-primary/50"
+                                ? "border-green-500 bg-gradient-to-r from-green-50 to-yellow-50 shadow-lg ring-2 ring-green-200"
+                                : "border-gray-200 hover:border-green-300 hover:shadow-md"
                             }`}
                           >
                             <div className="flex items-start gap-4">
                               <img
                                 src={room.image}
                                 alt={room.name}
-                                className="w-24 h-24 object-cover rounded-lg"
+                                className="w-32 h-32 object-cover rounded-xl shadow-md group-hover:shadow-xl transition-all duration-300"
                               />
                               <div className="flex-1">
-                                <h4 className="font-semibold text-lg">{room.name}</h4>
-                                <p className="text-sm text-gray-600 mb-2">{room.description}</p>
+                                <h4 className="font-bold text-xl text-green-700 mb-2">{room.name}</h4>
+                                <p className="text-sm text-gray-600 mb-3">{room.description}</p>
                                 <div className="flex items-center gap-4">
-                                  <p className="text-xl font-bold text-primary">${room.price}/night</p>
-                                  <p className="text-sm text-gray-500">Capacity: {room.capacity} guests</p>
+                                  <p className="text-2xl font-bold bg-gradient-to-r from-green-600 to-yellow-600 bg-clip-text text-transparent">
+                                    ${room.price}<span className="text-base text-gray-500">/night</span>
+                                  </p>
+                                  <p className="text-sm text-gray-500 flex items-center gap-1">
+                                    <Users size={16} />
+                                    {room.capacity} guests
+                                  </p>
                                 </div>
                               </div>
                             </div>
@@ -359,17 +404,23 @@ export default function BookingPage() {
 
                   {/* Special Requests */}
                   <div className="space-y-2">
-                    <Label htmlFor="requests">Special Requests (Optional)</Label>
+                    <Label htmlFor="requests" className="text-gray-700 text-lg">Special Requests (Optional)</Label>
                     <textarea
                       id="requests"
                       value={formData.specialRequests}
                       onChange={(e) => setFormData({ ...formData, specialRequests: e.target.value })}
-                      className="w-full min-h-[100px] px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full min-h-[100px] px-4 py-3 border-2 border-green-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
                       placeholder="Any special requirements or requests..."
                     />
                   </div>
 
-                  <Button type="submit" className="w-full" size="lg" disabled={!selectedRoom}>
+                  <Button 
+                    type="submit" 
+                    className="w-full bg-gradient-to-r from-green-600 to-yellow-600 hover:from-green-700 hover:to-yellow-700 text-white font-semibold shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-[1.02]" 
+                    size="lg" 
+                    disabled={!selectedRoom}
+                  >
+                    <Sparkles className="w-5 h-5 mr-2" />
                     Submit Booking Request
                   </Button>
                 </form>
@@ -378,53 +429,71 @@ export default function BookingPage() {
           </div>
 
           {/* Booking Summary */}
-          <div className="lg:col-span-1">
-            <Card className="sticky top-24">
-              <CardHeader>
-                <CardTitle>Booking Summary</CardTitle>
+          <div className="lg:col-span-1 animate-in fade-in slide-in-from-right duration-700 delay-400">
+            <Card className="sticky top-24 shadow-2xl border-2 border-green-100">
+              <CardHeader className="bg-gradient-to-r from-green-50 to-yellow-50 border-b border-green-100">
+                <CardTitle className="text-xl text-green-700">Booking Summary</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-6 pt-6">
                 {selectedRoom ? (
                   <>
-                    <div>
-                      <p className="text-sm text-gray-600 mb-1">Selected Room</p>
-                      <p className="font-semibold">{selectedRoom.name}</p>
+                    <div className="p-4 bg-gradient-to-br from-green-50 to-yellow-50 rounded-xl border border-green-200">
+                      <p className="text-sm text-gray-600 mb-2">Selected Room</p>
+                      <p className="font-bold text-lg text-green-700">{selectedRoom.name}</p>
                     </div>
                     {formData.checkin && formData.checkout && (
                       <>
-                        <div>
-                          <p className="text-sm text-gray-600 mb-1">Dates</p>
-                          <p className="text-sm">
-                            {new Date(formData.checkin).toLocaleDateString()} - {new Date(formData.checkout).toLocaleDateString()}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-600 mb-1">Nights</p>
-                          <p className="font-semibold">{calculateNights()}</p>
-                        </div>
-                        <div className="border-t pt-4">
-                          <div className="flex justify-between items-center mb-2">
-                            <p className="text-sm">Room Rate</p>
-                            <p className="text-sm">${selectedRoom.price} x {calculateNights()}</p>
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-green-100">
+                            <p className="text-sm text-gray-600">Check-in</p>
+                            <p className="font-semibold text-green-700">
+                              {new Date(formData.checkin).toLocaleDateString()}
+                            </p>
                           </div>
-                          <div className="flex justify-between items-center text-lg font-bold">
-                            <p>Total</p>
-                            <p className="text-primary">${calculateTotal()}</p>
+                          <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-green-100">
+                            <p className="text-sm text-gray-600">Check-out</p>
+                            <p className="font-semibold text-green-700">
+                              {new Date(formData.checkout).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <div className="flex justify-between items-center p-3 bg-gradient-to-r from-yellow-50 to-green-50 rounded-lg border-2 border-yellow-200">
+                            <p className="text-sm text-gray-600">Nights</p>
+                            <p className="font-bold text-xl text-green-700">{calculateNights()}</p>
+                          </div>
+                        </div>
+                        <div className="border-t-2 border-green-100 pt-4 space-y-3">
+                          <div className="flex justify-between items-center">
+                            <p className="text-sm text-gray-600">Room Rate</p>
+                            <p className="text-sm font-semibold">${selectedRoom.price} × {calculateNights()}</p>
+                          </div>
+                          <div className="flex justify-between items-center p-4 bg-gradient-to-r from-green-600 to-yellow-600 rounded-xl shadow-lg">
+                            <p className="text-white font-bold text-lg">Total</p>
+                            <p className="text-white font-bold text-2xl">${calculateTotal()}</p>
                           </div>
                         </div>
                       </>
                     )}
                   </>
                 ) : (
-                  <p className="text-center text-gray-500 py-8">Select a room to see pricing</p>
+                  <div className="text-center py-12">
+                    <Sparkles className="w-12 h-12 text-yellow-500 mx-auto mb-3 animate-pulse" />
+                    <p className="text-gray-500">Select a room to see pricing</p>
+                  </div>
                 )}
 
-                <div className="border-t pt-4 space-y-2">
-                  <p className="text-xs text-gray-600">
-                    ✓ Free cancellation up to 24 hours before check-in
+                <div className="border-t-2 border-green-100 pt-4 space-y-3">
+                  <p className="text-xs text-gray-600 flex items-start gap-2">
+                    <span className="text-green-500 mt-0.5">✓</span>
+                    <span>Free cancellation up to 24 hours before check-in</span>
                   </p>
-                  <p className="text-xs text-gray-600">✓ No payment required now</p>
-                  <p className="text-xs text-gray-600">✓ Confirmation within 24 hours</p>
+                  <p className="text-xs text-gray-600 flex items-start gap-2">
+                    <span className="text-green-500 mt-0.5">✓</span>
+                    <span>No payment required now</span>
+                  </p>
+                  <p className="text-xs text-gray-600 flex items-start gap-2">
+                    <span className="text-green-500 mt-0.5">✓</span>
+                    <span>Confirmation within 24 hours</span>
+                  </p>
                 </div>
               </CardContent>
             </Card>
@@ -434,4 +503,3 @@ export default function BookingPage() {
     </div>
   )
 }
-

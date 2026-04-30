@@ -32,6 +32,7 @@ interface Bill {
 export default function BillingManager() {
   const [bookings, setBookings] = useState<any[]>([])
   const [orders, setOrders] = useState<any[]>([])
+  const [walkInOrders, setWalkInOrders] = useState<any[]>([])
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null)
   const [showBillDialog, setShowBillDialog] = useState(false)
   const [showPaymentDialog, setShowPaymentDialog] = useState(false)
@@ -64,6 +65,15 @@ export default function BillingManager() {
       const allOrders = await fetchRestaurantOrders()
       console.log("🍽️ Billing - All restaurant orders:", allOrders.length)
       setOrders(allOrders)
+      
+      // Separate walk-in orders (unpaid only)
+      const walkIns = allOrders.filter((order: any) => 
+        order.orderType === "walk_in" && 
+        order.paymentStatus === "unpaid" &&
+        order.status !== "cancelled"
+      )
+      console.log("🚶 Billing - Walk-in orders (unpaid):", walkIns.length)
+      setWalkInOrders(walkIns)
     } catch (error) {
       console.error('❌ Billing - Failed to load data:', error)
     }
@@ -107,6 +117,37 @@ export default function BillingManager() {
       serviceTax,
       vat,
       totalAmount
+    }
+
+    // Reset payment states to defaults
+    setRoomPaymentStatus("paid")
+    setRoomPaymentMethod("cash")
+    setRestaurantPaymentStatus("paid")
+    setRestaurantPaymentMethod("cash")
+    
+    setSelectedBill(bill)
+    setShowBillDialog(true)
+  }
+
+  const generateWalkInBill = (order: any) => {
+    // For walk-in orders, there's no room charge, only restaurant order
+    const bill: Bill = {
+      booking: {
+        guest: order.guestName,
+        roomNumber: order.roomNumber, // This will be the table number
+        checkin: new Date(order.createdAt).toISOString().split('T')[0],
+        checkout: new Date(order.createdAt).toISOString().split('T')[0],
+        price: 0,
+        status: "Walk-in"
+      },
+      roomCharges: 0,
+      numberOfNights: 0,
+      restaurantOrders: [order],
+      restaurantTotal: order.total,
+      subtotal: order.total,
+      serviceTax: 0,  // Already included in order total
+      vat: 0,  // Already included in order total
+      totalAmount: order.total
     }
 
     // Reset payment states to defaults
@@ -178,8 +219,91 @@ Thank you for staying with us!
     if (!selectedBill) return
 
     try {
-      console.log('🔵 Starting checkout for booking:', selectedBill.booking.id)
+      const isWalkIn = selectedBill.booking.status === "Walk-in"
       
+      console.log(`🔵 Starting checkout for ${isWalkIn ? 'walk-in order' : 'booking'}:`, selectedBill.booking.id)
+      
+      // For walk-in orders, just mark the order as paid or create credit
+      if (isWalkIn) {
+        const order = selectedBill.restaurantOrders[0]
+        
+        if (restaurantPaymentStatus === "paid") {
+          // Update order payment status
+          console.log('🔵 Updating order payment status...')
+          await fetch(`/api/restaurant/orders/${order.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              paymentStatus: 'paid',
+              paymentMethod: restaurantPaymentMethod
+            })
+          })
+          console.log('✅ Order marked as paid')
+          
+          // Add to accounts
+          await createAccountTransaction({
+            date: new Date().toISOString().split("T")[0],
+            type: "income",
+            category: "food_beverage",
+            description: `Walk-in Order #${order.orderNumber} - ${order.roomNumber}`,
+            amount: order.total,
+            currency: "NPR",
+            paymentMethod: restaurantPaymentMethod
+          })
+          console.log('✅ Transaction added to accounts')
+          
+          alert(`✅ Walk-in order payment completed!\n\nTotal Paid: NPR ${order.total.toFixed(2)}\nPayment Method: ${restaurantPaymentMethod.toUpperCase()}`)
+        } else {
+          // Credit payment - create credit account
+          console.log('🔵 Creating credit account for walk-in order...')
+          
+          await fetch(`/api/restaurant/orders/${order.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              paymentStatus: 'credit',
+              paymentMethod: 'credit'
+            })
+          })
+          
+          const dueDate = new Date()
+          dueDate.setDate(dueDate.getDate() + 30) // 30 days credit period
+          
+          await createCreditAccount({
+            guestName: order.guestName,
+            guestPhone: order.roomNumber, // Using table number as reference
+            guestEmail: "",
+            guestAddress: "",
+            creditAmount: order.total,
+            paidAmount: 0,
+            outstandingBalance: order.total,
+            creditDate: new Date().toISOString().split("T")[0],
+            dueDate: dueDate.toISOString().split("T")[0],
+            status: 'unpaid',
+            bookingId: null,
+            notes: `Walk-in Order #${order.orderNumber} - ${order.roomNumber}`
+          })
+          console.log('✅ Credit account created')
+          
+          // Add notification for new credit account
+          addNotification(
+            "payment",
+            "New Credit Account",
+            `Walk-in: ${order.guestName} - NPR ${order.total.toFixed(2)} due on ${dueDate.toISOString().split("T")[0]}`,
+            "medium",
+            "accounts"
+          )
+          
+          alert(`✅ Walk-in order on credit!\n\nTotal Amount: NPR ${order.total.toFixed(2)}\nDue Date: ${dueDate.toISOString().split("T")[0]}\n\n💳 Credit account created in AMS → Credit Tracking`)
+        }
+        
+        setShowPaymentDialog(false)
+        setShowBillDialog(false)
+        await loadData()
+        return
+      }
+      
+      // Regular booking checkout
       // Mark booking as checked out
       console.log('🔵 Updating booking status...')
       await updateBooking(selectedBill.booking.id, { status: "Checked Out" })
@@ -412,6 +536,68 @@ Thank you for staying with us!
                   </Card>
                 )
               })
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Walk-in Orders Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>🚶 Walk-in / Dine-in Orders - Pending Payment</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {walkInOrders.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                No pending walk-in orders
+              </div>
+            ) : (
+              walkInOrders.map((order) => (
+                <Card key={order.id} className="border-l-4 border-l-blue-500">
+                  <CardContent className="pt-6">
+                    <div className="flex justify-between items-start">
+                      <div className="space-y-2">
+                        <div>
+                          <p className="text-lg font-bold">{order.guestName}</p>
+                          <p className="text-sm text-gray-600">
+                            {order.roomNumber} • {new Date(order.createdAt).toLocaleString()}
+                          </p>
+                          <p className="text-xs text-gray-500">Order #{order.orderNumber}</p>
+                        </div>
+                        <div className="flex gap-4 text-sm">
+                          <div>
+                            <span className="text-gray-600">Items: </span>
+                            <span className="font-semibold">{order.items?.length || 0}</span>
+                          </div>
+                          <div>
+                            <Badge variant={
+                              order.status === "pending" ? "secondary" :
+                              order.status === "preparing" ? "default" :
+                              order.status === "ready" ? "default" :
+                              "outline"
+                            }>
+                              {order.status}
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right space-y-2">
+                        <div>
+                          <p className="text-sm text-gray-600">Total Amount</p>
+                          <p className="text-2xl font-bold text-primary">
+                            NPR {order.total.toFixed(2)}
+                          </p>
+                        </div>
+                        <Button onClick={() => generateWalkInBill(order)} className="w-full">
+                          <Receipt className="w-4 h-4 mr-2" />
+                          Generate Bill
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
             )}
           </div>
         </CardContent>

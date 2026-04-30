@@ -47,6 +47,7 @@ model RoomInventory {
 
 model Booking {
   id            Int       @id @default(autoincrement())
+  bookingId     String?   @unique // Unique booking reference (e.g., BK-2025-001)
   guest         String
   email         String?
   phone         String?
@@ -56,12 +57,57 @@ model Booking {
   checkout      String
   price         String
   status        String    // "Pending" | "Confirmed" | "Cancelled" | "Checked Out"
-  bookingSource String?   // "website" | "phone" | "walkin"
+  bookingSource String?   // "website" | "phone" | "walkin" | "business"
+  businessId    Int?
+  numberOfGuests Int?     @default(1)
+  bookingType   String?   @default("Bed Only") // "Bed Only" | "Bed & Breakfast"
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   
   roomInventory RoomInventory? @relation(fields: [roomNumber], references: [roomNumber])
   restaurantOrders RestaurantOrder[]
+  business      Business? @relation(fields: [businessId], references: [id])
+}
+
+// ============================================
+// BUSINESS PARTNERS
+// ============================================
+
+model Business {
+  id             Int       @id @default(autoincrement())
+  name           String    @unique
+  contactPerson  String?
+  phone          String?
+  email          String?
+  address        String?
+  irdNumber      String?
+  creditLimit    Float     @default(0)
+  currentCredit  Float     @default(0)
+  active         Boolean   @default(true)
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  bookings       Booking[]
+  creditAccounts CreditAccount[]
+  rateCards      BusinessRateCard[]
+}
+
+// Business Rate Cards - Fixed rates per business per room type per meal plan
+model BusinessRateCard {
+  id          Int      @id @default(autoincrement())
+  businessId  Int
+  roomType    String   // "Deluxe", "Standard", etc.
+  mealPlan    String   // "EP", "BB", "MAP", "AP"
+  sglRate     Float?   // Single occupancy rate
+  dblRate     Float?   // Double occupancy rate
+  trplRate    Float?   // Triple occupancy rate
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  
+  @@unique([businessId, roomType, mealPlan])
 }
 
 // ============================================
@@ -70,7 +116,7 @@ model Booking {
 
 model SiteSettings {
   id        Int      @id @default(autoincrement())
-  logo      String?
+  logoImage String?  @db.Text
   siteName  String   @default("Dhampus Eco Lodge")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -84,6 +130,15 @@ model HeroSettings {
   subtitle       String   @default("Experience luxury in the heart of the Himalayas")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+}
+
+model HeroMedia {
+  id        Int      @id @default(autoincrement())
+  type      String   // "image" | "video"
+  url       String   @db.Text // URL or base64 - using TEXT for large base64 strings
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model GalleryItem {
@@ -125,6 +180,9 @@ model RestaurantOrder {
   orderType     String?   @default("room_service") // "room_service" | "restaurant" | "bar"
   status        String    @default("pending") // "pending" | "confirmed" | "completed" | "cancelled"
   subtotal      Float
+  discountType  String?   // "percentage" | "amount"
+  discountValue Float?    @default(0)
+  discountAmount Float?   @default(0)
   tax           Float     @default(0)
   taxPercentage Float?    @default(13)
   total         Float
@@ -233,12 +291,14 @@ model CreditAccount {
   dueDate            DateTime  // Payment due date
   status             String    @default("unpaid") // "paid" | "partial" | "unpaid" | "overdue"
   bookingId          Int?      // Optional link to booking
+  businessId         Int?      // Optional link to business
   notes              String?
   lastReminderSent   DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
   
   payments CreditPayment[]
+  business Business? @relation(fields: [businessId], references: [id])
 }
 
 model CreditPayment {

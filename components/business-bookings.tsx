@@ -1,0 +1,535 @@
+"use client"
+
+import { useState, useEffect } from "react"
+import { Plus, Search, Building2, Users, X } from "lucide-react"
+import { fetchBusinesses, fetchBookings, createBooking, fetchRooms, fetchRoomInventory } from "@/lib/api"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Badge } from "@/components/ui/badge"
+
+interface Business {
+  id: number
+  name: string
+  phone: string
+  email?: string | null
+}
+
+interface RoomBooking {
+  room: string
+  roomNumber: string
+  price: string
+}
+
+export default function BusinessBookings() {
+  const [businesses, setBusinesses] = useState<Business[]>([])
+  const [bookings, setBookings] = useState<any[]>([])
+  const [rooms, setRooms] = useState<any[]>([])
+  const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null)
+  const [availableRoomNumbers, setAvailableRoomNumbers] = useState<{ [key: number]: string[] }>({})
+  
+  const [formData, setFormData] = useState({
+    businessId: "",
+    guest: "",
+    phone: "",
+    email: "",
+    numberOfGuests: "1",
+    bookingType: "bed_only",
+    rooms: [{ room: "", roomNumber: "", price: "" }] as RoomBooking[],
+    checkin: "",
+    checkout: "",
+    status: "Confirmed"
+  })
+
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  const loadData = async () => {
+    try {
+      const [businessesData, bookingsData, roomsData] = await Promise.all([
+        fetchBusinesses(),
+        fetchBookings(),
+        fetchRooms()
+      ])
+      setBusinesses(businessesData.filter((b: any) => b.active))
+      setBookings(bookingsData.filter((b: any) => b.bookingSource === "business"))
+      setRooms(roomsData)
+    } catch (error) {
+      console.error('Failed to load data:', error)
+    }
+  }
+
+  const loadAvailableRoomsForIndex = async (index: number, roomName: string) => {
+    if (!formData.checkin || !formData.checkout) return
+
+    try {
+      const [roomsData, inventoryData, bookingsData] = await Promise.all([
+        fetchRooms(),
+        fetchRoomInventory(),
+        fetchBookings()
+      ])
+      
+      const selectedRoom = roomsData.find((r: any) => r.name === roomName)
+      if (!selectedRoom) return
+      
+      const roomNumbersForType = inventoryData
+        .filter((inv: any) => inv.roomTypeId === selectedRoom.id)
+        .map((inv: any) => inv.roomNumber)
+      
+      const checkin = new Date(formData.checkin)
+      const checkout = new Date(formData.checkout)
+      
+      const available = roomNumbersForType.filter((roomNum: string) => {
+        const hasConflict = bookingsData.some((booking: any) => {
+          if (booking.status === "Cancelled" || booking.status === "Checked Out") return false
+          if (booking.roomNumber !== roomNum) return false
+          
+          const bookingCheckin = new Date(booking.checkin)
+          const bookingCheckout = new Date(booking.checkout)
+          
+          return checkin < bookingCheckout && checkout > bookingCheckin
+        })
+        
+        return !hasConflict
+      })
+      
+      setAvailableRoomNumbers(prev => ({ ...prev, [index]: available }))
+    } catch (error) {
+      console.error('Failed to load available rooms:', error)
+    }
+  }
+
+  const handleOpenDialog = () => {
+    setFormData({
+      businessId: "",
+      guest: "",
+      phone: "",
+      email: "",
+      numberOfGuests: "1",
+      bookingType: "bed_only",
+      rooms: [{ room: "", roomNumber: "", price: "" }],
+      checkin: "",
+      checkout: "",
+      status: "Confirmed"
+    })
+    setSelectedBusiness(null)
+    setAvailableRoomNumbers({})
+    setIsDialogOpen(true)
+  }
+
+  const handleBusinessSelect = (businessId: string) => {
+    const business = businesses.find(b => b.id.toString() === businessId)
+    setSelectedBusiness(business || null)
+    setFormData({ ...formData, businessId })
+  }
+
+  const handleRoomSelect = (index: number, roomName: string) => {
+    const room = rooms.find(r => r.name === roomName)
+    const newRooms = [...formData.rooms]
+    newRooms[index] = { ...newRooms[index], room: roomName, price: room?.price || "" }
+    setFormData({ ...formData, rooms: newRooms })
+    loadAvailableRoomsForIndex(index, roomName)
+  }
+
+  const handleRoomNumberSelect = (index: number, roomNumber: string) => {
+    const newRooms = [...formData.rooms]
+    newRooms[index] = { ...newRooms[index], roomNumber }
+    setFormData({ ...formData, rooms: newRooms })
+  }
+
+  const addRoom = () => {
+    setFormData({
+      ...formData,
+      rooms: [...formData.rooms, { room: "", roomNumber: "", price: "" }]
+    })
+  }
+
+  const removeRoom = (index: number) => {
+    if (formData.rooms.length > 1) {
+      const newRooms = formData.rooms.filter((_, i) => i !== index)
+      setFormData({ ...formData, rooms: newRooms })
+    }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (!formData.businessId) {
+      alert("Please select a business partner")
+      return
+    }
+
+    try {
+      // Create a booking for each room
+      const bookingPromises = formData.rooms.map(roomBooking => 
+        createBooking({
+          businessId: parseInt(formData.businessId),
+          guest: formData.guest,
+          phone: formData.phone,
+          email: formData.email,
+          room: roomBooking.room,
+          roomNumber: roomBooking.roomNumber || null,
+          checkin: formData.checkin,
+          checkout: formData.checkout,
+          price: roomBooking.price,
+          numberOfGuests: parseInt(formData.numberOfGuests),
+          bookingType: formData.bookingType,
+          status: formData.status,
+          bookingSource: "business"
+        })
+      )
+
+      await Promise.all(bookingPromises)
+      await loadData()
+      setIsDialogOpen(false)
+      alert(`${formData.rooms.length} booking(s) created successfully!`)
+    } catch (error) {
+      console.error('Failed to create booking:', error)
+      alert('Failed to create booking')
+    }
+  }
+
+  const businessBookingsCount = bookings.length
+  const totalRevenue = bookings
+    .filter(b => b.status !== "Cancelled")
+    .reduce((sum, b) => sum + parseFloat(b.price || 0), 0)
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-2xl font-bold">Business Bookings</h2>
+          <p className="text-sm text-muted-foreground">Manage bookings from business partners</p>
+        </div>
+        <Button onClick={handleOpenDialog}>
+          <Plus className="w-4 h-4 mr-2" />
+          Create Business Booking
+        </Button>
+      </div>
+
+      {/* Stats */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Bookings</CardTitle>
+            <Building2 className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{businessBookingsCount}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Revenue</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">NPR {totalRevenue.toFixed(2)}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Active Partners</CardTitle>
+            <Building2 className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{businesses.length}</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Bookings Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent Business Bookings</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left p-2">Guest</th>
+                  <th className="text-left p-2">Business</th>
+                  <th className="text-left p-2">Room</th>
+                  <th className="text-left p-2">Guests</th>
+                  <th className="text-left p-2">Type</th>
+                  <th className="text-left p-2">Check-in</th>
+                  <th className="text-left p-2">Check-out</th>
+                  <th className="text-left p-2">Price</th>
+                  <th className="text-left p-2">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bookings.map((booking) => (
+                  <tr key={booking.id} className="border-b hover:bg-muted/50">
+                    <td className="p-2">{booking.guest}</td>
+                    <td className="p-2">
+                      {businesses.find(b => b.id === booking.businessId)?.name || "N/A"}
+                    </td>
+                    <td className="p-2">{booking.room} {booking.roomNumber && `#${booking.roomNumber}`}</td>
+                    <td className="p-2">{booking.numberOfGuests || "-"}</td>
+                    <td className="p-2">
+                      {booking.bookingType === "bed_breakfast" ? "B&B" : "Bed Only"}
+                    </td>
+                    <td className="p-2">{booking.checkin}</td>
+                    <td className="p-2">{booking.checkout}</td>
+                    <td className="p-2">NPR {booking.price}</td>
+                    <td className="p-2">
+                      <Badge variant={
+                        booking.status === "Confirmed" ? "default" :
+                        booking.status === "Pending" ? "secondary" :
+                        booking.status === "Checked Out" ? "outline" :
+                        "destructive"
+                      }>
+                        {booking.status}
+                      </Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {bookings.length === 0 && (
+              <p className="text-center text-muted-foreground py-8">No business bookings yet</p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Create Booking Dialog */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Create Business Booking</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Business Selection */}
+            <div>
+              <Label htmlFor="businessId">Business Partner *</Label>
+              <Select value={formData.businessId} onValueChange={handleBusinessSelect} required>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select business" />
+                </SelectTrigger>
+                <SelectContent>
+                  {businesses.map((business) => (
+                    <SelectItem key={business.id} value={business.id.toString()}>
+                      {business.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {selectedBusiness && (
+              <Card className="bg-muted">
+                <CardContent className="pt-4">
+                  <p className="text-sm"><strong>Business:</strong> {selectedBusiness.name}</p>
+                  <p className="text-sm"><strong>Contact:</strong> {selectedBusiness.phone}</p>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Guest Information */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="guest">Guest/Tourist Name *</Label>
+                <Input
+                  id="guest"
+                  value={formData.guest}
+                  onChange={(e) => setFormData({ ...formData, guest: e.target.value })}
+                  placeholder="Tourist name"
+                  required
+                />
+              </div>
+              <div>
+                <Label htmlFor="phone">Guest Phone</Label>
+                <Input
+                  id="phone"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  placeholder="Tourist phone number"
+                />
+              </div>
+              <div>
+                <Label htmlFor="email">Guest Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  placeholder="Tourist email"
+                />
+              </div>
+              <div>
+                <Label htmlFor="numberOfGuests">Number of Guests *</Label>
+                <Input
+                  id="numberOfGuests"
+                  type="number"
+                  min="1"
+                  value={formData.numberOfGuests}
+                  onChange={(e) => setFormData({ ...formData, numberOfGuests: e.target.value })}
+                  required
+                />
+              </div>
+              <div>
+                <Label htmlFor="bookingType">Booking Type *</Label>
+                <Select 
+                  value={formData.bookingType} 
+                  onValueChange={(value) => setFormData({ ...formData, bookingType: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="bed_only">Bed Only</SelectItem>
+                    <SelectItem value="bed_breakfast">Bed & Breakfast</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Dates */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="checkin">Check-in Date *</Label>
+                <Input
+                  id="checkin"
+                  type="date"
+                  value={formData.checkin}
+                  onChange={(e) => setFormData({ ...formData, checkin: e.target.value })}
+                  required
+                />
+              </div>
+              <div>
+                <Label htmlFor="checkout">Check-out Date *</Label>
+                <Input
+                  id="checkout"
+                  type="date"
+                  value={formData.checkout}
+                  onChange={(e) => setFormData({ ...formData, checkout: e.target.value })}
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Multiple Rooms */}
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <Label>Rooms *</Label>
+                <Button type="button" size="sm" onClick={addRoom}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Room
+                </Button>
+              </div>
+
+              {formData.rooms.map((roomBooking, index) => (
+                <Card key={index}>
+                  <CardContent className="pt-4 space-y-4">
+                    <div className="flex justify-between items-center">
+                      <h4 className="font-semibold">Room {index + 1}</h4>
+                      {formData.rooms.length > 1 && (
+                        <Button 
+                          type="button" 
+                          size="sm" 
+                          variant="ghost" 
+                          onClick={() => removeRoom(index)}
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <Label>Room Type *</Label>
+                        <Select 
+                          value={roomBooking.room} 
+                          onValueChange={(value) => handleRoomSelect(index, value)} 
+                          required
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select room type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {rooms.map((room) => (
+                              <SelectItem key={room.id} value={room.name}>
+                                {room.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label>Room Number</Label>
+                        <Select 
+                          value={roomBooking.roomNumber || ""} 
+                          onValueChange={(value) => handleRoomNumberSelect(index, value)}
+                          disabled={!roomBooking.room || !formData.checkin || !formData.checkout}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Auto-assign" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(availableRoomNumbers[index] || []).length > 0 ? (
+                              (availableRoomNumbers[index] || []).map((num) => (
+                                <SelectItem key={num} value={num}>
+                                  Room {num}
+                                </SelectItem>
+                              ))
+                            ) : (
+                              <SelectItem value="none" disabled>
+                                {!roomBooking.room ? "Select room type first" : 
+                                 !formData.checkin || !formData.checkout ? "Select dates first" : 
+                                 "No rooms available"}
+                              </SelectItem>
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label>Price (NPR) *</Label>
+                        <Input
+                          type="number"
+                          value={roomBooking.price}
+                          onChange={(e) => {
+                            const newRooms = [...formData.rooms]
+                            newRooms[index] = { ...newRooms[index], price: e.target.value }
+                            setFormData({ ...formData, rooms: newRooms })
+                          }}
+                          required
+                        />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            <div>
+              <Label htmlFor="status">Status</Label>
+              <Select value={formData.status} onValueChange={(value) => setFormData({ ...formData, status: value })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Confirmed">Confirmed</SelectItem>
+                  <SelectItem value="Pending">Pending</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit">Create Booking{formData.rooms.length > 1 ? 's' : ''}</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
