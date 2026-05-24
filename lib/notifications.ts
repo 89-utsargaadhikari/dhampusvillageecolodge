@@ -157,7 +157,7 @@ export const getUnreadCount = (): number => {
 }
 
 // Auto-generate notifications based on system events
-export const checkAndNotify = (): void => {
+export const checkAndNotify = async (): Promise<void> => {
   if (typeof window === "undefined") return
   
   // Check for new bookings
@@ -181,27 +181,72 @@ export const checkAndNotify = (): void => {
     }
   }
   
-  // Check for low stock
-  const menuItems = JSON.parse(localStorage.getItem("restaurant_menu") || "[]")
-  const lowStockItems = menuItems.filter(
-    (item: any) => item.category === "bar" && item.stock <= item.minStock
-  )
-  
-  if (lowStockItems.length > 0) {
-    const existingNotifications = getNotifications()
-    const hasStockNotification = existingNotifications.some(
-      n => n.type === "inventory" && n.message.includes("low stock")
-    )
-    
-    if (!hasStockNotification) {
-      addNotification(
-        "inventory",
-        "Low Stock Alert",
-        `${lowStockItems.length} item(s) need restocking`,
-        "high",
-        "restaurant"
-      )
+  // Check inventory alerts from API
+  try {
+    const response = await fetch("/api/inventory/check-alerts")
+    if (response.ok) {
+      const alerts = await response.json()
+      const existingNotifications = getNotifications()
+      
+      // Critical stock alerts (including expired items)
+      if (alerts.critical && alerts.critical.length > 0) {
+        const hasCriticalNotification = existingNotifications.some(
+          n => n.type === "inventory" && n.priority === "high" && n.message.includes("critical")
+        )
+        
+        if (!hasCriticalNotification) {
+          const criticalItems = alerts.critical.map((item: any) => 
+            item.type === 'expired' ? `${item.name} (expired)` : item.name
+          ).join(", ")
+          
+          addNotification(
+            "inventory",
+            "🔴 Critical Inventory Alert",
+            `${alerts.critical.length} item(s) critically low or expired: ${criticalItems}`,
+            "high"
+          )
+        }
+      }
+      
+      // Low stock alerts
+      if (alerts.low && alerts.low.length > 0) {
+        const hasLowNotification = existingNotifications.some(
+          n => n.type === "inventory" && n.priority === "medium" && n.message.includes("running low")
+        )
+        
+        if (!hasLowNotification) {
+          const lowItems = alerts.low.map((item: any) => item.name).slice(0, 3).join(", ")
+          addNotification(
+            "inventory",
+            "🟠 Low Stock Alert",
+            `${alerts.low.length} item(s) running low: ${lowItems}${alerts.low.length > 3 ? '...' : ''}`,
+            "medium"
+          )
+        }
+      }
+      
+      // Expiring soon alerts
+      if (alerts.expiring && alerts.expiring.length > 0) {
+        const hasExpiryNotification = existingNotifications.some(
+          n => n.type === "inventory" && n.message.includes("expiring soon")
+        )
+        
+        if (!hasExpiryNotification) {
+          const expiringItems = alerts.expiring.map((item: any) => 
+            `${item.name} (${item.daysUntilExpiry} days)`
+          ).slice(0, 2).join(", ")
+          
+          addNotification(
+            "inventory",
+            "⏰ Items Expiring Soon",
+            `${alerts.expiring.length} item(s) expiring soon: ${expiringItems}${alerts.expiring.length > 2 ? '...' : ''}`,
+            "medium"
+          )
+        }
+      }
     }
+  } catch (error) {
+    console.error("Failed to check inventory alerts:", error)
   }
   
   // Check for today's checkouts

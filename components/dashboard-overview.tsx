@@ -50,12 +50,13 @@ export default function DashboardOverview() {
 
   const loadData = async () => {
     try {
-      const [bookings, roomsData, inventory, orders, transactions] = await Promise.all([
+      const [bookings, roomsData, inventory, orders, transactions, inventoryItems] = await Promise.all([
         fetchBookings(),
         fetchRooms(),
         fetchRoomInventory(),
         fetchRestaurantOrders(),
-        fetchAccountTransactions()
+        fetchAccountTransactions(),
+        fetch("/api/inventory").then(res => res.json()).catch(() => [])
       ])
 
       setAllBookings(bookings)
@@ -78,7 +79,15 @@ export default function DashboardOverview() {
 
       // Calculate RMS stats
       const restaurantRevenue = orders.reduce((sum: number, order: any) => sum + order.total, 0)
-      const lowStockItems = 0 // Inventory system to be implemented
+      
+      // Calculate inventory alerts
+      const lowStockItems = Array.isArray(inventoryItems) ? (
+        inventoryItems.filter((item: any) => 
+          item.currentStock <= item.lowStockLevel && item.currentStock > item.criticalStockLevel
+        ).length + inventoryItems.filter((item: any) => 
+          item.currentStock <= item.criticalStockLevel
+        ).length
+      ) : 0
 
       // Calculate AMS stats
       const accountBalance = transactions.reduce((sum: number, txn: any) => {
