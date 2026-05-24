@@ -487,20 +487,6 @@ export default function RestaurantManager() {
             </Badge>
           </div>
           
-          <Card className="border-yellow-200 bg-yellow-50">
-            <CardContent className="pt-6">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5" />
-                <div>
-                  <p className="font-semibold text-yellow-900">Inventory System Coming Soon</p>
-                  <p className="text-sm text-yellow-700 mt-1">
-                    Advanced inventory tracking with stock levels, alerts, and automated deductions will be available in the next update.
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          
           <div className="bg-white rounded-lg shadow overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50 border-b">

@@ -1,9 +1,9 @@
 "use client"
 
-import { LayoutDashboard, Calendar, Bed, ImageIcon, ArrowLeft, Video, Settings, DoorOpen, Hash, HardDrive, UtensilsCrossed, Wallet, Receipt, X, Building2, Briefcase } from "lucide-react"
+import { LayoutDashboard, Calendar, Bed, ImageIcon, ArrowLeft, Video, Settings, DoorOpen, Hash, HardDrive, UtensilsCrossed, Wallet, Receipt, X, Building2, Briefcase, Package, TrendingUp } from "lucide-react"
 import Link from "next/link"
 
-type AdminTab = "overview" | "bookings" | "rooms" | "room-inventory" | "room-status" | "restaurant" | "billing" | "accounts" | "business-partners" | "business-bookings" | "gallery" | "hero" | "settings" | "storage"
+type AdminTab = "overview" | "bookings" | "rooms" | "room-inventory" | "room-status" | "restaurant" | "inventory" | "billing" | "accounts" | "financial-reports" | "business-partners" | "business-bookings" | "gallery" | "hero" | "settings" | "storage"
 
 interface AdminSidebarProps {
   activeTab: AdminTab
@@ -22,8 +22,10 @@ export default function AdminSidebar({ activeTab, setActiveTab, isOpen, onClose 
     { id: "business-partners", label: "Business Partners", icon: Building2 },
     { id: "business-bookings", label: "Business Bookings", icon: Briefcase },
     { id: "restaurant", label: "Restaurant (RMS)", icon: UtensilsCrossed },
+    { id: "inventory", label: "Inventory", icon: Package },
     { id: "billing", label: "Billing & Checkout", icon: Receipt },
     { id: "accounts", label: "Accounts (AMS)", icon: Wallet },
+    { id: "financial-reports", label: "Financial Reports", icon: TrendingUp },
     { id: "gallery", label: "Gallery", icon: ImageIcon },
     { id: "hero", label: "Hero & Media", icon: Video },
     { id: "settings", label: "Site Settings", icon: Settings },

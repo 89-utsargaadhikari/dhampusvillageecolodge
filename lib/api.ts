@@ -378,3 +378,119 @@ export const importBusinesses = async (businesses: any[]) => {
   return res.json()
 }
 
+// ============================================
+// VENDORS
+// ============================================
+
+export const fetchVendors = async () => {
+  const res = await fetch('/api/vendors')
+  if (!res.ok) throw new Error('Failed to fetch vendors')
+  return res.json()
+}
+
+export const createVendor = async (vendorData: any) => {
+  const res = await fetch('/api/vendors', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(vendorData)
+  })
+  if (!res.ok) throw new Error('Failed to create vendor')
+  return res.json()
+}
+
+// ============================================
+// STAFF
+// ============================================
+
+export const fetchStaff = async () => {
+  const res = await fetch('/api/staff')
+  if (!res.ok) throw new Error('Failed to fetch staff')
+  return res.json()
+}
+
+export const createStaff = async (staffData: any) => {
+  const res = await fetch('/api/staff', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(staffData)
+  })
+  if (!res.ok) throw new Error('Failed to create staff')
+  return res.json()
+}
+
+// ============================================
+// PURCHASES
+// ============================================
+
+export const fetchPurchases = async () => {
+  const res = await fetch('/api/purchases')
+  if (!res.ok) throw new Error('Failed to fetch purchases')
+  return res.json()
+}
+
+export const createPurchase = async (purchaseData: any) => {
+  const res = await fetch('/api/purchases', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(purchaseData)
+  })
+  if (!res.ok) throw new Error('Failed to create purchase')
+  return res.json()
+}
+
+export const updatePurchase = async (id: number, purchaseData: any) => {
+  const res = await fetch(`/api/purchases/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(purchaseData)
+  })
+  if (!res.ok) throw new Error('Failed to update purchase')
+  return res.json()
+}
+
+export const deletePurchase = async (id: number) => {
+  const res = await fetch(`/api/purchases/${id}`, {
+    method: 'DELETE'
+  })
+  if (!res.ok) throw new Error('Failed to delete purchase')
+  return res.json()
+}
+
+// ============================================
+// SALES
+// ============================================
+
+export const fetchSales = async () => {
+  const res = await fetch('/api/sales')
+  if (!res.ok) throw new Error('Failed to fetch sales')
+  return res.json()
+}
+
+export const createSale = async (saleData: any) => {
+  const res = await fetch('/api/sales', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(saleData)
+  })
+  if (!res.ok) throw new Error('Failed to create sale')
+  return res.json()
+}
+
+export const updateSale = async (id: number, saleData: any) => {
+  const res = await fetch(`/api/sales/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(saleData)
+  })
+  if (!res.ok) throw new Error('Failed to update sale')
+  return res.json()
+}
+
+export const deleteSale = async (id: number) => {
+  const res = await fetch(`/api/sales/${id}`, {
+    method: 'DELETE'
+  })
+  if (!res.ok) throw new Error('Failed to delete sale')
+  return res.json()
+}
+

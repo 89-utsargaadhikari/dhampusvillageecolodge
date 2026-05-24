@@ -14,12 +14,14 @@ import HeroSettingsManager from "@/components/hero-settings-manager"
 import SiteSettingsManager from "@/components/site-settings-manager"
 import StorageManager from "@/components/storage-manager"
 import RestaurantManager from "@/components/restaurant-manager"
+import InventoryManager from "@/components/inventory-manager"
 import AccountsManager from "@/components/accounts-manager"
 import BillingManager from "@/components/billing-manager"
 import BusinessPartners from "@/components/business-partners"
 import BusinessBookings from "@/components/business-bookings"
+import FinancialReports from "@/components/financial-reports"
 
-type AdminTab = "overview" | "bookings" | "rooms" | "room-inventory" | "room-status" | "restaurant" | "billing" | "accounts" | "business-partners" | "business-bookings" | "gallery" | "hero" | "settings" | "storage"
+type AdminTab = "overview" | "bookings" | "rooms" | "room-inventory" | "room-status" | "restaurant" | "inventory" | "billing" | "accounts" | "financial-reports" | "business-partners" | "business-bookings" | "gallery" | "hero" | "settings" | "storage"
 
 export default function AdminDashboard() {
   const router = useRouter()
@@ -89,8 +91,10 @@ export default function AdminDashboard() {
           {activeTab === "business-partners" && <BusinessPartners key="business-partners" />}
           {activeTab === "business-bookings" && <BusinessBookings key="business-bookings" />}
           {activeTab === "restaurant" && <RestaurantManager key="restaurant" />}
+          {activeTab === "inventory" && <InventoryManager key="inventory" />}
           {activeTab === "billing" && <BillingManager key="billing" />}
           {activeTab === "accounts" && <AccountsManager key="accounts" />}
+          {activeTab === "financial-reports" && <FinancialReports key="financial-reports" />}
           {activeTab === "gallery" && <GalleryManager key="gallery" />}
           {activeTab === "hero" && <HeroSettingsManager key="hero" />}
           {activeTab === "settings" && <SiteSettingsManager key="settings" />}

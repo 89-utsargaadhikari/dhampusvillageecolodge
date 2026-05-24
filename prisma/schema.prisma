@@ -215,21 +215,34 @@ model OrderItem {
 // ============================================
 
 model InventoryItem {
-  id             Int       @id @default(autoincrement())
-  menuItemId     Int?      @unique // Link to menu item (optional)
-  name           String    @unique
-  unit           String    // "pieces" | "bottles" | "kg" | "liters"
-  currentStock   Float     @default(0)
-  minStock       Float     @default(0) // Alert threshold
-  maxStock       Float?
-  reorderPoint   Float?
-  unitPrice      Float     @default(0)
-  category       String?   // "beverages" | "food_items" | "supplies"
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id                  Int       @id @default(autoincrement())
+  menuItemId          Int?      @unique // Link to menu item (optional)
+  name                String    @unique
+  category            String    // Required: "Fresh Produce" | "Dry Goods" | "Beverages" | etc.
+  unit                String    // Required: "kg" | "liters" | "pieces" | "bottles" | etc.
   
-  menuItem       RestaurantMenuItem? @relation(fields: [menuItemId], references: [id])
-  transactions   InventoryTransaction[]
+  // Stock Levels (3-tier system)
+  currentStock        Float     @default(0)
+  goodStockLevel      Float     @default(50)    // Green zone minimum
+  lowStockLevel       Float     @default(20)    // Orange zone (warning)
+  criticalStockLevel  Float     @default(5)     // Red zone (critical)
+  
+  // Pricing
+  unitPrice           Float     @default(0)
+  
+  // Storage
+  storageLocation     String?   // Optional: "Main Pantry", "Cold Storage", etc.
+  
+  // Expiry Tracking (Optional per item)
+  trackExpiry         Boolean   @default(false)
+  expiryDate          DateTime?
+  expiryAlertDays     Int?      @default(7)     // Alert X days before expiry
+  
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  
+  menuItem            RestaurantMenuItem? @relation(fields: [menuItemId], references: [id])
+  transactions        InventoryTransaction[]
 }
 
 model InventoryTransaction {
@@ -324,4 +337,98 @@ model User {
   role      String   @default("admin") // "admin" | "staff" (for future)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ============================================
+// PURCHASE & SALES TRACKING
+// ============================================
+
+// Staff/Employee for sales tracking
+model Staff {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  role      String?  // "Manager", "Waiter", "Receptionist", etc.
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  sales     Sale[]
+}
+
+// Vendor/Supplier for purchase tracking
+model Vendor {
+  id            Int       @id @default(autoincrement())
+  name          String    @unique
+  contactPerson String?
+  phone         String?
+  email         String?
+  address       String?
+  panNumber     String?   // PAN/VAT number
+  active        Boolean   @default(true)
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  purchases     Purchase[]
+}
+
+// Purchase tracking
+model Purchase {
+  id            Int       @id @default(autoincrement())
+  invoiceNo     String    @unique
+  vendorId      Int
+  vendorName    String    // Denormalized for easy access
+  purchaseDate  DateTime  @default(now())
+  month         String    // e.g., "Bhadra", "Ashwin" (Nepali month)
+  dateBS        String?   // Bikram Sambat date
+  
+  // Amounts
+  subtotal      Float
+  vatAmount     Float     @default(0)
+  vatPercent    Float     @default(13)
+  nonVatAmount  Float     @default(0)
+  total         Float
+  
+  paymentMode   String    @default("CREDIT") // "CASH" | "CREDIT" | "CARD" | "BANK"
+  paymentStatus String    @default("unpaid") // "paid" | "unpaid" | "partial"
+  paidAmount    Float     @default(0)
+  
+  category      String?   // "Food", "Beverages", "Supplies", etc.
+  description   String?
+  notes         String?
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  vendor        Vendor    @relation(fields: [vendorId], references: [id])
+}
+
+// Sales tracking (separate from bookings and restaurant orders)
+model Sale {
+  id            Int       @id @default(autoincrement())
+  saleDate      DateTime  @default(now())
+  month         String    // e.g., "Bhadra", "Ashwin" (Nepali month)
+  dateBS        String?   // Bikram Sambat date
+  
+  staffId       Int
+  staffName     String    // Denormalized for easy access
+  
+  // Amounts
+  subtotal      Float
+  vatAmount     Float     @default(0)
+  vatPercent    Float     @default(13)
+  nonVatAmount  Float     @default(0)
+  total         Float
+  
+  paymentMode   String    @default("CASH") // "CASH" | "CREDIT" | "CARD" | "QR"
+  category      String?   // "Room", "Food", "Beverage", "Other"
+  description   String?
+  
+  invoiceNo     String?   @unique
+  customerName  String?
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  staff         Staff     @relation(fields: [staffId], references: [id])
 }
