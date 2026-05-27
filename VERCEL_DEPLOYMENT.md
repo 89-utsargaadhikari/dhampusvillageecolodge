@@ -2,15 +2,19 @@
 
 ## ✅ WHAT I FIXED
 
-1. **Updated `package.json`**
+1. **Updated Next.js** (16.0.0 → 16.2.6)
+   - Fixed security vulnerability that was blocking deployment
+   - Build now passes Vercel security checks
+
+2. **Updated `package.json`**
    - Added `prisma generate` to build script
    - Added `postinstall` hook for Prisma Client
 
-2. **Fixed Database Schema**
+3. **Fixed Database Schema**
    - Added `@db.Text` to all image fields for large data support
    - Schema already synced to PostgreSQL
 
-3. **Created `.vercelignore`**
+4. **Created `.vercelignore`**
    - Excludes local files from deployment
 
 ---
