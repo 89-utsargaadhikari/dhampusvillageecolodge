@@ -23,7 +23,7 @@ model Room {
   status      String    // "Available" | "Booked"
   features    String    // JSON array stored as string
   rating      Float
-  image       String?   // Base64 or URL
+  image       String?   @db.Text // Base64 or URL
   roomNumbers String?   // Comma-separated (legacy support)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -143,7 +143,7 @@ model HeroMedia {
 
 model GalleryItem {
   id        Int      @id @default(autoincrement())
-  image     String   // Base64 or URL
+  image     String   @db.Text // Base64 or URL
   title     String
   category  String?  @default("general")
   order     Int      @default(0)
@@ -161,7 +161,7 @@ model RestaurantMenuItem {
   description String?
   price       Float
   category    String    // "food" | "drinks" | "bar" | "snacks"
-  image       String?
+  image       String?   @db.Text
   available   Boolean   @default(true)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
