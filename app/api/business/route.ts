@@ -13,9 +13,13 @@ export async function GET() {
       }
     })
     return NextResponse.json(businesses)
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching businesses:', error)
-    return NextResponse.json({ error: 'Failed to fetch businesses' }, { status: 500 })
+    return NextResponse.json({ 
+      error: 'Failed to fetch businesses',
+      details: error.message,
+      code: error.code 
+    }, { status: 500 })
   }
 }
 

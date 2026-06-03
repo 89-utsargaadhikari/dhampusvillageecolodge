@@ -19,17 +19,23 @@ export default function BusinessBookingImport() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<any>(null)
 
-  useState(() => {
+  useEffect(() => {
     fetchBusinesses()
-  })
+  }, [])
 
   const fetchBusinesses = async () => {
     try {
       const response = await fetch("/api/business")
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+        console.error("Failed to fetch businesses:", errorData)
+        throw new Error(errorData.details || errorData.error || 'Failed to fetch businesses')
+      }
       const data = await response.json()
       setBusinesses(data)
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to fetch businesses:", error)
+      alert(`Failed to load businesses: ${error.message}`)
     }
   }
 
