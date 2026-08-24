@@ -121,6 +121,10 @@ export default function BookingPage() {
         price: totalPrice,
         status: "Pending",
         bookingSource: "website",
+        numberOfGuests: guestCount,
+        bookingType: "EP",
+        occupancy: guestCount >= 3 ? "TRPL" : guestCount === 1 ? "SGL" : "DBL",
+        currency: "USD",
       })
 
       addNotification(
@@ -210,19 +214,19 @@ export default function BookingPage() {
       <ScrollProgress />
       {/* Header */}
       <header className="bg-white/80 backdrop-blur-md border-b border-green-100 sticky top-0 z-50 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-3 group">
-            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-green-600 to-yellow-500 flex items-center justify-center shadow-lg group-hover:shadow-xl transition-all duration-300 group-hover:scale-110">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between gap-3">
+          <Link href="/" className="flex items-center gap-3 group min-w-0">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gradient-to-br from-green-600 to-yellow-500 flex items-center justify-center shadow-lg group-hover:shadow-xl transition-all duration-300 group-hover:scale-110 shrink-0">
               <span className="text-white font-display text-xl font-bold">D</span>
             </div>
-            <div>
-              <p className="font-display font-bold text-green-700 text-lg">Dhampus Eco Lodge</p>
-              <p className="text-xs text-yellow-600">Luxury Himalayan Retreat</p>
+            <div className="min-w-0">
+              <p className="font-display font-bold text-green-700 text-sm sm:text-lg truncate">Dhampus Eco Lodge</p>
+              <p className="text-xs text-yellow-600 hidden sm:block">Luxury Himalayan Retreat</p>
             </div>
           </Link>
-          <Link href="/booking/status">
-            <Button variant="outline" className="border-green-600 text-green-700 hover:bg-green-50 transition-all duration-300">
-              Check Booking Status
+          <Link href="/booking/status" className="shrink-0">
+            <Button variant="outline" size="sm" className="border-green-600 text-green-700 hover:bg-green-50 transition-all duration-300">
+              Status
             </Button>
           </Link>
         </div>
@@ -233,10 +237,10 @@ export default function BookingPage() {
           <div className="inline-block mb-4">
             <span className="text-yellow-500 text-4xl animate-pulse">✨</span>
           </div>
-          <h1 className="text-5xl md:text-6xl font-display font-bold bg-gradient-to-r from-green-700 via-yellow-600 to-green-700 bg-clip-text text-transparent mb-4 animate-in slide-in-from-bottom duration-700 delay-100">
+          <h1 className="text-2xl sm:text-4xl md:text-6xl font-display font-bold bg-gradient-to-r from-green-700 via-yellow-600 to-green-700 bg-clip-text text-transparent mb-4 animate-in slide-in-from-bottom duration-700 delay-100">
             Book Your Himalayan Escape
           </h1>
-          <p className="text-xl text-gray-600 animate-in slide-in-from-bottom duration-700 delay-200">
+          <p className="text-base sm:text-xl text-gray-600 animate-in slide-in-from-bottom duration-700 delay-200">
             Experience luxury nestled in the heart of the Himalayas
           </p>
         </div>

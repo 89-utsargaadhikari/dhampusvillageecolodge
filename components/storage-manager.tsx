@@ -79,9 +79,9 @@ export default function StorageManager() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-gray-900">Database Management</h2>
-        <Button onClick={loadDatabaseStats} variant="outline">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+        <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Database Management</h2>
+        <Button onClick={loadDatabaseStats} variant="outline" className="w-full sm:w-auto">
           Refresh Stats
         </Button>
       </div>

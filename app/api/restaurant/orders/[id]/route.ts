@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
+import { restoreOrderStock, syncOrderStock } from '@/lib/inventory-stock'
 
 export async function GET(
   request: NextRequest,
@@ -42,16 +43,19 @@ export async function PUT(
 
     console.log('🔵 Updating order:', id, 'with data:', body)
 
-    // Use a transaction to ensure atomicity
+    const existing = await prisma.restaurantOrder.findUnique({
+      where: { id },
+      include: { items: true }
+    })
+    if (!existing) {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    }
+
     const order = await prisma.$transaction(async (tx) => {
-      // If items are being updated, delete old items first
       if (body.items) {
-        console.log('🗑️ Deleting old items for order:', id)
         await tx.orderItem.deleteMany({
           where: { orderId: id }
         })
-        
-        console.log('➕ Creating new items:', body.items)
         await tx.orderItem.createMany({
           data: body.items.map((item: any) => ({
             orderId: id,
@@ -64,7 +68,6 @@ export async function PUT(
         })
       }
 
-      // Update order totals and status
       const updateData: any = {}
       if (body.status !== undefined) updateData.status = body.status
       if (body.subtotal !== undefined) updateData.subtotal = body.subtotal
@@ -75,9 +78,7 @@ export async function PUT(
       if (body.taxPercentage !== undefined) updateData.taxPercentage = body.taxPercentage
       if (body.total !== undefined) updateData.total = body.total
 
-      console.log('📝 Updating order with:', updateData)
-      
-      return await tx.restaurantOrder.update({
+      const updated = await tx.restaurantOrder.update({
         where: { id },
         data: updateData,
         include: {
@@ -88,6 +89,15 @@ export async function PUT(
           }
         }
       })
+
+      const nextStatus = body.status ?? existing.status
+      if (nextStatus === "cancelled") {
+        await restoreOrderStock(tx, existing.orderNumber)
+      } else {
+        await syncOrderStock(tx, existing.orderNumber, updated.items)
+      }
+
+      return updated
     })
     
     console.log('✅ Order updated successfully:', order)
@@ -106,14 +116,21 @@ export async function DELETE(
     const { id: paramId } = await context.params
     const id = parseInt(paramId)
 
-    // Delete order items first (cascade should handle this, but being explicit)
-    await prisma.orderItem.deleteMany({
-      where: { orderId: id }
-    })
-
-    // Delete the order
-    await prisma.restaurantOrder.delete({
+    const existing = await prisma.restaurantOrder.findUnique({
       where: { id }
+    })
+    if (!existing) {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await restoreOrderStock(tx, existing.orderNumber)
+      await tx.orderItem.deleteMany({
+        where: { orderId: id }
+      })
+      await tx.restaurantOrder.delete({
+        where: { id }
+      })
     })
     
     return NextResponse.json({ message: 'Order deleted' })

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Trash2, Edit, Plus, CheckCircle, X, DoorOpen } from "lucide-react"
+import { Trash2, Edit, Plus, CheckCircle } from "lucide-react"
 import { type Booking } from "@/lib/storage"
 import { 
   fetchBookings, 
@@ -9,9 +9,10 @@ import {
   updateBooking as updateBookingAPI, 
   deleteBooking as deleteBookingAPI,
   fetchRooms,
-  fetchRoomInventory
+  fetchRoomInventory,
+  fetchBusinesses
 } from "@/lib/api"
-import { addNotification, getNotifications } from "@/lib/notifications"
+import { BOOKING_SOURCES, CURRENCIES, MEAL_PLANS, OCCUPANCY_TYPES, currencySymbol, mealPlanLabel } from "@/lib/hotel"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -26,7 +27,7 @@ export default function BookingsManager() {
   const [isRoomAssignDialogOpen, setIsRoomAssignDialogOpen] = useState(false)
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null)
   const [pendingStatusChange, setPendingStatusChange] = useState<{ id: number; status: "Confirmed" | "Pending" | "Cancelled" | "Checked In" | "Checked Out" } | null>(null)
-  const [formData, setFormData] = useState({
+  const emptyForm = {
     guest: "",
     email: "",
     phone: "",
@@ -36,8 +37,16 @@ export default function BookingsManager() {
     checkout: "",
     price: "",
     status: "Pending" as "Confirmed" | "Pending" | "Cancelled" | "Checked In" | "Checked Out",
-    bookingSource: "phone" as "website" | "phone" | "walkin",
-  })
+    bookingSource: "phone",
+    businessId: "",
+    numberOfGuests: "1",
+    bookingType: "EP",
+    occupancy: "DBL",
+    currency: "NPR",
+    extraBed: false,
+  }
+  const [formData, setFormData] = useState(emptyForm)
+  const [businesses, setBusinesses] = useState<any[]>([])
   const [quickRoomAssign, setQuickRoomAssign] = useState("")
 
   useEffect(() => {
@@ -46,11 +55,13 @@ export default function BookingsManager() {
   
   const loadData = async () => {
     try {
-      const [bookingsData, roomsData] = await Promise.all([
+      const [bookingsData, roomsData, businessesData] = await Promise.all([
         fetchBookings(),
-        fetchRooms()
+        fetchRooms(),
+        fetchBusinesses().catch(() => [])
       ])
       setBookings(bookingsData)
+      setBusinesses((businessesData || []).filter((b: any) => b.active !== false))
       const roomList = roomsData.map((r: any) => r.name)
       setRooms(roomList)
       
@@ -176,20 +187,18 @@ export default function BookingsManager() {
         price: booking.price,
         status: booking.status,
         bookingSource: booking.bookingSource || "phone",
+        businessId: booking.businessId ? String(booking.businessId) : "",
+        numberOfGuests: String(booking.numberOfGuests || 1),
+        bookingType: booking.bookingType === "bed_only" ? "EP" : booking.bookingType === "bed_breakfast" ? "BB" : (booking.bookingType || "EP"),
+        occupancy: booking.occupancy || "DBL",
+        currency: booking.currency || "NPR",
+        extraBed: Boolean(booking.extraBed),
       })
     } else {
       setEditingBooking(null)
       setFormData({
-        guest: "",
-        email: "",
-        phone: "",
+        ...emptyForm,
         room: rooms[0] || "",
-        roomNumber: "",
-        checkin: "",
-        checkout: "",
-        price: "",
-        status: "Pending",
-        bookingSource: "phone",
       })
     }
     setIsDialogOpen(true)
@@ -222,12 +231,6 @@ export default function BookingsManager() {
     const nights = Math.ceil((checkoutDate.getTime() - checkinDate.getTime()) / (1000 * 60 * 60 * 24))
     if (nights < 1) {
       alert("⚠️ Minimum stay is 1 night!")
-      return
-    }
-
-    // Validate price
-    if (!formData.price || parseFloat(formData.price) <= 0) {
-      alert("⚠️ Please enter a valid price!")
       return
     }
 
@@ -273,9 +276,15 @@ export default function BookingsManager() {
       roomNumber: formData.roomNumber,
       checkin: formData.checkin,
       checkout: formData.checkout,
-      price: formData.price,
+      price: formData.price || "0",
       status: formData.status,
       bookingSource: formData.bookingSource,
+      businessId: formData.businessId || null,
+      numberOfGuests: formData.numberOfGuests,
+      bookingType: formData.bookingType,
+      occupancy: formData.occupancy,
+      currency: formData.currency,
+      extraBed: formData.extraBed,
     }
 
     try {
@@ -351,52 +360,123 @@ export default function BookingsManager() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-gray-900">Bookings Management</h2>
-        <Button onClick={() => handleOpenDialog()} className="flex items-center gap-2">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+        <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Bookings Management</h2>
+        <Button onClick={() => handleOpenDialog()} className="flex items-center justify-center gap-2 w-full sm:w-auto">
           <Plus size={20} />
           Add Booking
         </Button>
       </div>
 
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="md:hidden space-y-3">
+        {bookings.length === 0 && (
+          <div className="bg-white rounded-lg shadow p-6 text-center text-sm text-gray-500">
+            No bookings yet
+          </div>
+        )}
+        {bookings.map((booking) => (
+          <div key={booking.id} className="bg-white rounded-lg shadow p-4 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-semibold text-gray-900 truncate">{booking.guest}</p>
+                <p className="text-xs text-gray-500 truncate">{booking.phone || booking.email || "No contact"}</p>
+              </div>
+              <div className="flex gap-2 shrink-0">
+                <button onClick={() => handleOpenDialog(booking)} className="text-blue-600 hover:text-blue-800">
+                  <Edit size={18} />
+                </button>
+                <button onClick={() => handleDelete(booking.id)} className="text-red-600 hover:text-red-800">
+                  <Trash2 size={18} />
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+              <div>
+                <span className="text-gray-400">Room</span>
+                <p className="font-medium text-gray-800">{booking.room} {booking.roomNumber ? `#${booking.roomNumber}` : ""}</p>
+              </div>
+              <div>
+                <span className="text-gray-400">Pax / Plan</span>
+                <p className="font-medium text-gray-800">{booking.numberOfGuests || 1} · {mealPlanLabel(booking.bookingType)}</p>
+              </div>
+              <div>
+                <span className="text-gray-400">Dates</span>
+                <p className="font-medium text-gray-800">{booking.checkin} → {booking.checkout}</p>
+              </div>
+              <div>
+                <span className="text-gray-400">Rate</span>
+                <p className="font-medium text-gray-800">{currencySymbol(booking.currency)} {booking.price || "0"}</p>
+              </div>
+            </div>
+            <Select
+              value={booking.status}
+              onValueChange={(value) =>
+                handleStatusChange(booking.id, value as "Confirmed" | "Pending" | "Cancelled" | "Checked In" | "Checked Out")
+              }
+            >
+              <SelectTrigger className="w-full">
+                <span className="text-sm">{booking.status}</span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Pending">Pending</SelectItem>
+                <SelectItem value="Confirmed">Confirmed</SelectItem>
+                <SelectItem value="Checked In">Checked In</SelectItem>
+                <SelectItem value="Checked Out">Checked Out</SelectItem>
+                <SelectItem value="Cancelled">Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        ))}
+      </div>
+
+      <div className="hidden md:block bg-white rounded-lg shadow overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="w-full min-w-[900px]">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-600">Guest</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-600">Contact</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-600">Room</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-600">Room #</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-600">Dates</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-600">Price</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-600">Source</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-600">Status</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-600">Actions</th>
+                <th className="px-3 lg:px-4 py-3 text-left text-sm font-semibold text-gray-600">Guest</th>
+                <th className="px-3 lg:px-4 py-3 text-left text-sm font-semibold text-gray-600">Contact</th>
+                <th className="px-3 lg:px-4 py-3 text-left text-sm font-semibold text-gray-600">Room</th>
+                <th className="px-3 lg:px-4 py-3 text-left text-sm font-semibold text-gray-600">Pax / Plan</th>
+                <th className="px-3 lg:px-4 py-3 text-left text-sm font-semibold text-gray-600">Room #</th>
+                <th className="px-3 lg:px-4 py-3 text-left text-sm font-semibold text-gray-600">Dates</th>
+                <th className="px-3 lg:px-4 py-3 text-left text-sm font-semibold text-gray-600">Rate</th>
+                <th className="px-3 lg:px-4 py-3 text-left text-sm font-semibold text-gray-600">Source</th>
+                <th className="px-3 lg:px-4 py-3 text-left text-sm font-semibold text-gray-600">Status</th>
+                <th className="px-3 lg:px-4 py-3 text-left text-sm font-semibold text-gray-600">Actions</th>
               </tr>
             </thead>
             <tbody>
               {bookings.map((booking) => (
                 <tr key={booking.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                  <td className="px-6 py-4 text-sm font-medium text-gray-900">{booking.guest}</td>
-                  <td className="px-6 py-4 text-sm text-gray-600">
+                  <td className="px-3 lg:px-4 py-3 text-sm font-medium text-gray-900">{booking.guest}</td>
+                  <td className="px-3 lg:px-4 py-3 text-sm text-gray-600">
                     <div className="flex flex-col">
                       {booking.email && <span className="text-xs">{booking.email}</span>}
                       {booking.phone && <span className="text-xs">{booking.phone}</span>}
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{booking.room}</td>
-                  <td className="px-6 py-4 text-sm font-semibold text-primary">
+                  <td className="px-3 lg:px-4 py-3 text-sm text-gray-600">
+                    <div>{booking.room}</div>
+                    <div className="text-xs text-gray-500">{booking.occupancy || "—"}</div>
+                  </td>
+                  <td className="px-3 lg:px-4 py-3 text-sm text-gray-600">
+                    <div>{booking.numberOfGuests || 1} pax</div>
+                    <div className="text-xs text-gray-500">{mealPlanLabel(booking.bookingType)}</div>
+                  </td>
+                  <td className="px-3 lg:px-4 py-3 text-sm font-semibold text-primary">
                     {booking.roomNumber || <span className="text-gray-400">Not assigned</span>}
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">
+                  <td className="px-3 lg:px-4 py-3 text-sm text-gray-600">
                     <div className="flex flex-col">
                       <span className="text-xs">{booking.checkin}</span>
                       <span className="text-xs">{booking.checkout}</span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-sm font-semibold text-gray-900">${booking.price}</td>
-                  <td className="px-6 py-4 text-sm">
+                  <td className="px-3 lg:px-4 py-3 text-sm font-semibold text-gray-900 whitespace-nowrap">
+                    {currencySymbol(booking.currency)} {booking.price || "0"}
+                  </td>
+                  <td className="px-3 lg:px-4 py-3 text-sm">
                     <span className={`px-2 py-1 rounded text-xs font-semibold ${
                       booking.bookingSource === "website" ? "bg-blue-100 text-blue-700" :
                       booking.bookingSource === "phone" ? "bg-purple-100 text-purple-700" :
@@ -405,7 +485,7 @@ export default function BookingsManager() {
                       {booking.bookingSource || "phone"}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-sm">
+                  <td className="px-3 lg:px-4 py-3 text-sm">
                     <Select
                       value={booking.status}
                       onValueChange={(value) =>
@@ -439,7 +519,7 @@ export default function BookingsManager() {
                       </SelectContent>
                     </Select>
                   </td>
-                  <td className="px-6 py-4 text-sm space-x-2 flex">
+                  <td className="px-3 lg:px-4 py-3 text-sm space-x-2 flex">
                     <button
                       onClick={() => handleOpenDialog(booking)}
                       className="text-blue-600 hover:text-blue-800 transition-colors"
@@ -462,12 +542,12 @@ export default function BookingsManager() {
 
       {/* Add/Edit Booking Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>{editingBooking ? "Edit Booking" : "Add New Booking"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="guest">Guest Name *</Label>
                 <Input
@@ -488,7 +568,7 @@ export default function BookingsManager() {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="phone">Phone</Label>
                 <Input
@@ -541,7 +621,57 @@ export default function BookingsManager() {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(0,0.7fr)_auto] gap-4">
+              <div className="min-w-0 space-y-2">
+                <Label>Meal Plan *</Label>
+                <Select value={formData.bookingType} onValueChange={(value) => setFormData({ ...formData, bookingType: value })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MEAL_PLANS.map((plan) => (
+                      <SelectItem key={plan.value} value={plan.value}>{plan.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="min-w-0 space-y-2">
+                <Label>Occupancy</Label>
+                <Select value={formData.occupancy} onValueChange={(value) => setFormData({ ...formData, occupancy: value })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {OCCUPANCY_TYPES.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="min-w-0 space-y-2">
+                <Label htmlFor="numberOfGuests">No. of Pax *</Label>
+                <Input
+                  id="numberOfGuests"
+                  type="number"
+                  min="1"
+                  value={formData.numberOfGuests}
+                  onChange={(e) => setFormData({ ...formData, numberOfGuests: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="flex items-end pb-2">
+                <label className="flex items-center gap-2 text-sm whitespace-nowrap">
+                  <input
+                    type="checkbox"
+                    checked={formData.extraBed}
+                    onChange={(e) => setFormData({ ...formData, extraBed: e.target.checked })}
+                  />
+                  Extra bed
+                </label>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="checkin">Check-in *</Label>
                 <Input
@@ -569,22 +699,37 @@ export default function BookingsManager() {
                 <p className="text-xs text-gray-500">Must be after check-in</p>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="price">Total Price *</Label>
+                <Label htmlFor="price">Rate (optional)</Label>
                 <div className="flex items-center">
-                  <span className="px-3 py-2 bg-gray-100 border border-r-0 rounded-l-md">$</span>
+                  <span className="px-3 py-2 bg-gray-100 border border-r-0 rounded-l-md text-sm">{currencySymbol(formData.currency)}</span>
                   <Input
                     id="price"
                     type="number"
+                    min="0"
+                    step="0.01"
                     value={formData.price}
                     onChange={(e) => setFormData({ ...formData, price: e.target.value })}
                     className="rounded-l-none"
-                    required
+                    placeholder="Custom / partner rate"
                   />
                 </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>Currency</Label>
+                <Select value={formData.currency} onValueChange={(value) => setFormData({ ...formData, currency: value })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CURRENCIES.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="status">Status *</Label>
                 <Select
@@ -609,21 +754,35 @@ export default function BookingsManager() {
                 <Label htmlFor="bookingSource">Booking Source *</Label>
                 <Select
                   value={formData.bookingSource}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, bookingSource: value as "website" | "phone" | "walkin" })
-                  }
+                  onValueChange={(value) => setFormData({ ...formData, bookingSource: value, businessId: value === "phone" || value === "website" || value === "walkin" ? "" : formData.businessId })}
                 >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="website">Website</SelectItem>
-                    <SelectItem value="phone">Phone</SelectItem>
-                    <SelectItem value="walkin">Walk-in</SelectItem>
+                    {BOOKING_SOURCES.map((source) => (
+                      <SelectItem key={source.value} value={source.value}>{source.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
+
+            {(formData.bookingSource === "travel_agent" || formData.bookingSource === "company" || formData.bookingSource === "business") && (
+              <div className="space-y-2">
+                <Label>Company / Agent</Label>
+                <Select value={formData.businessId} onValueChange={(value) => setFormData({ ...formData, businessId: value })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select from business partners" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {businesses.map((business) => (
+                      <SelectItem key={business.id} value={String(business.id)}>{business.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div className="flex justify-end gap-2 pt-4">
               <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>

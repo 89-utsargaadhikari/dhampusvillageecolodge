@@ -94,9 +94,9 @@ export default function GalleryManager() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-gray-900">Gallery Management</h2>
-        <Button onClick={handleOpenDialog} className="flex items-center gap-2">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+        <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Gallery Management</h2>
+        <Button onClick={handleOpenDialog} className="flex items-center justify-center gap-2 w-full sm:w-auto">
           <Plus size={20} />
           Add Image
         </Button>

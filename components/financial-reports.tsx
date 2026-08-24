@@ -67,7 +67,7 @@ export default function FinancialReports() {
   const [sales, setSales] = useState<Sale[]>([])
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [staff, setStaff] = useState<Staff[]>([])
-  const [selectedMonth, setSelectedMonth] = useState("")
+  const [selectedMonth, setSelectedMonth] = useState("all")
   const [isPurchaseDialogOpen, setIsPurchaseDialogOpen] = useState(false)
   const [isSaleDialogOpen, setIsSaleDialogOpen] = useState(false)
   const [isVendorDialogOpen, setIsVendorDialogOpen] = useState(false)
@@ -95,12 +95,12 @@ export default function FinancialReports() {
   }
 
   // Filter purchases by month
-  const filteredPurchases = selectedMonth
+  const filteredPurchases = selectedMonth && selectedMonth !== "all"
     ? purchases.filter(p => p.month === selectedMonth)
     : purchases
 
   // Filter sales by month
-  const filteredSales = selectedMonth
+  const filteredSales = selectedMonth && selectedMonth !== "all"
     ? sales.filter(s => s.month === selectedMonth)
     : sales
 
@@ -209,15 +209,15 @@ export default function FinancialReports() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">Financial Reports</h2>
-        <div className="flex gap-2">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+        <h2 className="text-xl sm:text-2xl font-bold">Financial Reports</h2>
+        <div className="flex flex-wrap gap-2 w-full sm:w-auto">
           <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-            <SelectTrigger className="w-48">
+            <SelectTrigger className="w-full sm:w-48">
               <SelectValue placeholder="All Months" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All Months</SelectItem>
+              <SelectItem value="all">All Months</SelectItem>
               {nepaliMonths.map(month => (
                 <SelectItem key={month} value={month}>{month}</SelectItem>
               ))}
@@ -249,7 +249,7 @@ export default function FinancialReports() {
               <Plus className="w-4 h-4 mr-2" />
               Add Purchase
             </Button>
-            <Button variant="outline" onClick={() => exportToCSV(Object.values(purchasesByVendor), `purchases_${selectedMonth || 'all'}`)}>
+            <Button variant="outline" onClick={() => exportToCSV(Object.values(purchasesByVendor), `purchases_${selectedMonth === "all" ? "all" : selectedMonth}`)}>
               <Download className="w-4 h-4 mr-2" />
               Export
             </Button>
@@ -386,7 +386,7 @@ export default function FinancialReports() {
               <Plus className="w-4 h-4 mr-2" />
               Add Sale
             </Button>
-            <Button variant="outline" onClick={() => exportToCSV(Object.values(salesByStaff), `sales_${selectedMonth || 'all'}`)}>
+            <Button variant="outline" onClick={() => exportToCSV(Object.values(salesByStaff), `sales_${selectedMonth === "all" ? "all" : selectedMonth}`)}>
               <Download className="w-4 h-4 mr-2" />
               Export
             </Button>

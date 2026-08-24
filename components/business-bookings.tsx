@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
+import { CURRENCIES, MEAL_PLANS, OCCUPANCY_TYPES, mealPlanLabel } from "@/lib/hotel"
 
 interface Business {
   id: number
@@ -38,7 +39,10 @@ export default function BusinessBookings() {
     phone: "",
     email: "",
     numberOfGuests: "1",
-    bookingType: "bed_only",
+    bookingType: "EP",
+    occupancy: "DBL",
+    currency: "NPR",
+    extraBed: false,
     rooms: [{ room: "", roomNumber: "", price: "" }] as RoomBooking[],
     checkin: "",
     checkout: "",
@@ -111,7 +115,10 @@ export default function BusinessBookings() {
       phone: "",
       email: "",
       numberOfGuests: "1",
-      bookingType: "bed_only",
+      bookingType: "EP",
+      occupancy: "DBL",
+      currency: "NPR",
+      extraBed: false,
       rooms: [{ room: "", roomNumber: "", price: "" }],
       checkin: "",
       checkout: "",
@@ -165,7 +172,7 @@ export default function BusinessBookings() {
     }
 
     try {
-      // Create a booking for each room
+      const groupId = formData.rooms.length > 1 ? `GRP-${Date.now()}` : null
       const bookingPromises = formData.rooms.map(roomBooking => 
         createBooking({
           businessId: parseInt(formData.businessId),
@@ -176,9 +183,13 @@ export default function BusinessBookings() {
           roomNumber: roomBooking.roomNumber || null,
           checkin: formData.checkin,
           checkout: formData.checkout,
-          price: roomBooking.price,
+          price: roomBooking.price || "0",
           numberOfGuests: parseInt(formData.numberOfGuests),
           bookingType: formData.bookingType,
+          occupancy: formData.occupancy,
+          currency: formData.currency,
+          extraBed: formData.extraBed,
+          groupId,
           status: formData.status,
           bookingSource: "business"
         })
@@ -201,12 +212,12 @@ export default function BusinessBookings() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <div>
-          <h2 className="text-2xl font-bold">Business Bookings</h2>
+          <h2 className="text-xl sm:text-2xl font-bold">Business Bookings</h2>
           <p className="text-sm text-muted-foreground">Manage bookings from business partners</p>
         </div>
-        <Button onClick={handleOpenDialog}>
+        <Button onClick={handleOpenDialog} className="w-full sm:w-auto">
           <Plus className="w-4 h-4 mr-2" />
           Create Business Booking
         </Button>
@@ -274,7 +285,7 @@ export default function BusinessBookings() {
                     <td className="p-2">{booking.room} {booking.roomNumber && `#${booking.roomNumber}`}</td>
                     <td className="p-2">{booking.numberOfGuests || "-"}</td>
                     <td className="p-2">
-                      {booking.bookingType === "bed_breakfast" ? "B&B" : "Bed Only"}
+                      {mealPlanLabel(booking.bookingType)} {booking.occupancy ? `• ${booking.occupancy}` : ""}
                     </td>
                     <td className="p-2">{booking.checkin}</td>
                     <td className="p-2">{booking.checkout}</td>
@@ -376,7 +387,7 @@ export default function BusinessBookings() {
                 />
               </div>
               <div>
-                <Label htmlFor="bookingType">Booking Type *</Label>
+                <Label htmlFor="bookingType">Meal Plan *</Label>
                 <Select 
                   value={formData.bookingType} 
                   onValueChange={(value) => setFormData({ ...formData, bookingType: value })}
@@ -385,8 +396,41 @@ export default function BusinessBookings() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="bed_only">Bed Only</SelectItem>
-                    <SelectItem value="bed_breakfast">Bed & Breakfast</SelectItem>
+                    {MEAL_PLANS.map((plan) => (
+                      <SelectItem key={plan.value} value={plan.value}>{plan.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Occupancy</Label>
+                <Select
+                  value={formData.occupancy}
+                  onValueChange={(value) => setFormData({ ...formData, occupancy: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {OCCUPANCY_TYPES.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Currency</Label>
+                <Select
+                  value={formData.currency}
+                  onValueChange={(value) => setFormData({ ...formData, currency: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CURRENCIES.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

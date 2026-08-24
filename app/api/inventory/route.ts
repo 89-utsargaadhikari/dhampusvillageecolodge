@@ -1,18 +1,26 @@
 import { NextRequest, NextResponse } from "next/server"
-import { PrismaClient } from "@prisma/client"
+import prisma from "@/lib/prisma"
+import { locationStocks } from "@/lib/inventory-units"
 
-const prisma = new PrismaClient()
-
-// GET - Fetch all inventory items
 export async function GET() {
   try {
     const items = await prisma.inventoryItem.findMany({
+      include: {
+        menuItem: {
+          select: { id: true, name: true, category: true, price: true }
+        }
+      },
       orderBy: {
         name: 'asc'
       }
     })
 
-    return NextResponse.json(items)
+    const normalized = items.map((item) => ({
+      ...item,
+      ...locationStocks(item)
+    }))
+
+    return NextResponse.json(normalized)
   } catch (error) {
     console.error("Failed to fetch inventory items:", error)
     return NextResponse.json(
@@ -24,8 +32,12 @@ export async function GET() {
 
 // POST - Create new inventory item
 export async function POST(request: NextRequest) {
+  let requestedName = ""
+  let requestedMenuItemId: number | null = null
   try {
     const data = await request.json()
+    requestedName = data.name || ""
+    requestedMenuItemId = data.menuItemId ? parseInt(data.menuItemId) : null
 
     // Validate required fields
     if (!data.name || !data.category || !data.unit) {
@@ -50,12 +62,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const storeStock = parseFloat(data.storeStock ?? data.currentStock) || 0
+    const barStock = parseFloat(data.barStock) || 0
+    const menuItemId = requestedMenuItemId
+
     const item = await prisma.inventoryItem.create({
       data: {
         name: data.name,
         category: data.category,
         unit: data.unit,
-        currentStock: parseFloat(data.currentStock) || 0,
+        storeStock,
+        barStock,
+        currentStock: storeStock + barStock,
+        menuItemId,
         goodStockLevel: parseFloat(data.goodStockLevel) || 50,
         lowStockLevel: parseFloat(data.lowStockLevel) || 20,
         criticalStockLevel: parseFloat(data.criticalStockLevel) || 5,
@@ -87,8 +106,18 @@ export async function POST(request: NextRequest) {
     console.error("Failed to create inventory item:", error)
     
     if (error.code === "P2002") {
+      const existing = requestedName
+        ? await prisma.inventoryItem.findUnique({ where: { name: requestedName } })
+        : null
+      if (existing && requestedMenuItemId && !existing.menuItemId) {
+        const linked = await prisma.inventoryItem.update({
+          where: { id: existing.id },
+          data: { menuItemId: requestedMenuItemId }
+        })
+        return NextResponse.json(linked)
+      }
       return NextResponse.json(
-        { error: "An item with this name already exists" },
+        { error: "An item with this name already exists, or this menu item is already linked" },
         { status: 400 }
       )
     }

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import { isCountableUnit } from "@/lib/inventory-units"
 
 interface InventoryItem {
   id: number
@@ -14,6 +15,8 @@ interface InventoryItem {
   category: string
   unit: string
   currentStock: number
+  storeStock?: number
+  barStock?: number
   goodStockLevel: number
   lowStockLevel: number
   criticalStockLevel: number
@@ -22,6 +25,7 @@ interface InventoryItem {
   trackExpiry: boolean
   expiryDate?: string
   expiryAlertDays?: number
+  menuItemId?: number | null
 }
 
 interface InventoryItemFormProps {
@@ -60,6 +64,8 @@ export default function InventoryItemForm({ item, onClose }: InventoryItemFormPr
     name: item?.name || "",
     category: item?.category || "",
     unit: item?.unit || "",
+    storeStock: item?.storeStock ?? item?.currentStock ?? 0,
+    barStock: item?.barStock ?? 0,
     currentStock: item?.currentStock || 0,
     goodStockLevel: item?.goodStockLevel || 50,
     lowStockLevel: item?.lowStockLevel || 20,
@@ -68,11 +74,20 @@ export default function InventoryItemForm({ item, onClose }: InventoryItemFormPr
     storageLocation: item?.storageLocation || "",
     trackExpiry: item?.trackExpiry || false,
     expiryDate: item?.expiryDate ? item.expiryDate.split('T')[0] : "",
-    expiryAlertDays: item?.expiryAlertDays || 7
+    expiryAlertDays: item?.expiryAlertDays || 7,
+    menuItemId: item?.menuItemId ? String(item.menuItemId) : "none"
   })
 
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [menuItems, setMenuItems] = useState<{ id: number; name: string; category: string }[]>([])
+
+  useEffect(() => {
+    fetch("/api/restaurant/menu")
+      .then((res) => res.json())
+      .then((data) => setMenuItems(Array.isArray(data) ? data : []))
+      .catch(() => setMenuItems([]))
+  }, [])
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {}
@@ -110,6 +125,7 @@ export default function InventoryItemForm({ item, onClose }: InventoryItemFormPr
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formData,
+          menuItemId: formData.menuItemId === "none" ? null : formData.menuItemId,
           expiryDate: formData.trackExpiry && formData.expiryDate 
             ? new Date(formData.expiryDate).toISOString() 
             : null
@@ -208,23 +224,54 @@ export default function InventoryItemForm({ item, onClose }: InventoryItemFormPr
                 placeholder="e.g., Main Pantry, Cold Storage, Bar"
               />
             </div>
+
+            <div>
+              <Label>Link to RMS menu item (for countable stock)</Label>
+              <Select value={formData.menuItemId} onValueChange={(val) => setFormData({ ...formData, menuItemId: val })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Not linked" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Not linked</SelectItem>
+                  {menuItems.map((menuItem) => (
+                    <SelectItem key={menuItem.id} value={String(menuItem.id)}>
+                      {menuItem.name} ({menuItem.category})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-600 mt-1">
+                {isCountableUnit(formData.unit)
+                  ? "When this menu item is sold, 1 unit is deducted from bar stock (bottles, pieces, cans, etc)."
+                  : "Choose a countable unit such as bottles or pieces to auto-deduct RMS sales."}
+              </p>
+            </div>
           </div>
 
           {/* Stock Levels */}
           <div className="space-y-4">
             <h3 className="text-lg font-semibold border-b pb-2">Stock Levels</h3>
             
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="currentStock">Current Stock</Label>
+                <Label htmlFor="storeStock">Store / warehouse stock</Label>
                 <Input
-                  id="currentStock"
+                  id="storeStock"
                   type="number"
                   step="0.01"
-                  value={formData.currentStock}
-                  onChange={(e) => setFormData({ ...formData, currentStock: parseFloat(e.target.value) || 0 })}
+                  value={formData.storeStock}
+                  onChange={(e) => setFormData({ ...formData, storeStock: parseFloat(e.target.value) || 0, currentStock: (parseFloat(e.target.value) || 0) + formData.barStock })}
                 />
-                {errors.currentStock && <p className="text-red-600 text-sm mt-1">{errors.currentStock}</p>}
+              </div>
+              <div>
+                <Label htmlFor="barStock">Bar stock</Label>
+                <Input
+                  id="barStock"
+                  type="number"
+                  step="0.01"
+                  value={formData.barStock}
+                  onChange={(e) => setFormData({ ...formData, barStock: parseFloat(e.target.value) || 0, currentStock: formData.storeStock + (parseFloat(e.target.value) || 0) })}
+                />
               </div>
 
               <div>

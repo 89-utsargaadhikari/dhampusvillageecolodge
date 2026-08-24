@@ -338,12 +338,12 @@ export default function BusinessPartners() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
         <div>
-          <h2 className="text-2xl font-bold">Business Partners</h2>
+          <h2 className="text-xl sm:text-2xl font-bold">Business Partners</h2>
           <p className="text-sm text-muted-foreground">Manage travel offices and business accounts</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button onClick={() => setIsImportDialogOpen(true)} variant="outline">
             <Upload className="w-4 h-4 mr-2" />
             Import Partners

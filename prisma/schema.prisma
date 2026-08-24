@@ -58,10 +58,14 @@ model Booking {
   checkout      String
   price         String
   status        String    // "Pending" | "Confirmed" | "Cancelled" | "Checked Out"
-  bookingSource String?   // "website" | "phone" | "walkin" | "business"
+  bookingSource String?   // "website" | "phone" | "walkin" | "business" | "travel_agent" | "company"
   businessId    Int?
   numberOfGuests Int?     @default(1)
-  bookingType   String?   @default("Bed Only") // "Bed Only" | "Bed & Breakfast"
+  bookingType   String?   @default("EP") // EP | CP | BB | MAP | AP | AI
+  occupancy     String?   // SGL | DBL | TRPL
+  currency      String?   @default("NPR")
+  extraBed      Boolean   @default(false)
+  groupId       String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   
@@ -99,7 +103,8 @@ model BusinessRateCard {
   id          Int      @id @default(autoincrement())
   businessId  Int
   roomType    String   // "Deluxe", "Standard", etc.
-  mealPlan    String   // "EP", "BB", "MAP", "AP"
+  mealPlan    String   // EP | CP | BB | MAP | AP | AI
+  currency    String   @default("NPR")
   sglRate     Float?   // Single occupancy rate
   dblRate     Float?   // Double occupancy rate
   trplRate    Float?   // Triple occupancy rate
@@ -108,7 +113,7 @@ model BusinessRateCard {
   
   business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
   
-  @@unique([businessId, roomType, mealPlan])
+  @@unique([businessId, roomType, mealPlan, currency])
 }
 
 // ============================================
@@ -222,8 +227,10 @@ model InventoryItem {
   category            String    // Required: "Fresh Produce" | "Dry Goods" | "Beverages" | etc.
   unit                String    // Required: "kg" | "liters" | "pieces" | "bottles" | etc.
   
-  // Stock Levels (3-tier system)
+  // Stock Levels (3-tier system + store/bar split)
   currentStock        Float     @default(0)
+  storeStock          Float     @default(0)
+  barStock            Float     @default(0)
   goodStockLevel      Float     @default(50)    // Green zone minimum
   lowStockLevel       Float     @default(20)    // Orange zone (warning)
   criticalStockLevel  Float     @default(5)     // Red zone (critical)
@@ -249,7 +256,7 @@ model InventoryItem {
 model InventoryTransaction {
   id            Int       @id @default(autoincrement())
   inventoryItemId Int
-  type          String    // "purchase" | "sale" | "adjustment" | "waste"
+  type          String    // "purchase" | "sale" | "adjustment" | "waste" | "transfer"
   quantity      Float
   unitPrice     Float?
   totalCost     Float?

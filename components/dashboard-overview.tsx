@@ -30,6 +30,10 @@ export default function DashboardOverview() {
     qrPayments: 0,
     bankTransfers: 0,
     creditPayments: 0,
+    todayCheckins: 0,
+    todayCheckouts: 0,
+    roomsOccupied: 0,
+    todayRevenue: 0,
   })
   const [bookingData, setBookingData] = useState<{ month: string; bookings: number; revenue: number }[]>([])
   const [recentBookings, setRecentBookings] = useState<any[]>([])
@@ -102,6 +106,32 @@ export default function DashboardOverview() {
       const bankTransfers = incomeTransactions.filter((t: any) => t.paymentMethod?.toLowerCase().includes("bank") || t.paymentMethod?.toLowerCase().includes("transfer")).reduce((sum: number, t: any) => sum + t.amount, 0)
       const creditPayments = incomeTransactions.filter((t: any) => t.paymentMethod?.toLowerCase().includes("credit")).reduce((sum: number, t: any) => sum + t.amount, 0)
 
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const isSameDay = (value?: string) => {
+        if (!value) return false
+        const date = new Date(value)
+        date.setHours(0, 0, 0, 0)
+        return date.getTime() === today.getTime()
+      }
+      const activeStatuses = ["Confirmed", "Checked In"]
+      const todayCheckins = bookings.filter((b: any) => isSameDay(b.checkin) && b.status !== "Cancelled").length
+      const todayCheckouts = bookings.filter((b: any) => isSameDay(b.checkout) && b.status !== "Cancelled").length
+      const roomsOccupied = bookings.filter((b: any) => {
+        if (!activeStatuses.includes(b.status)) return false
+        const checkin = new Date(b.checkin)
+        const checkout = new Date(b.checkout)
+        checkin.setHours(0, 0, 0, 0)
+        checkout.setHours(0, 0, 0, 0)
+        return checkin <= today && checkout > today
+      }).length
+      const todayBookingRevenue = bookings
+        .filter((b: any) => isSameDay(b.checkin) && b.status !== "Cancelled")
+        .reduce((sum: number, b: any) => sum + parseFloat(b.price || "0"), 0)
+      const todayRestaurantRevenue = orders
+        .filter((order: any) => isSameDay(order.orderDate || order.createdAt))
+        .reduce((sum: number, order: any) => sum + (order.total || 0), 0)
+
       setStats({
         totalBookings,
         totalRevenue,
@@ -116,6 +146,10 @@ export default function DashboardOverview() {
         qrPayments,
         bankTransfers,
         creditPayments,
+        todayCheckins,
+        todayCheckouts,
+        roomsOccupied,
+        todayRevenue: todayBookingRevenue + todayRestaurantRevenue,
       })
 
       // Group bookings by month
@@ -153,8 +187,28 @@ export default function DashboardOverview() {
   }
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-gray-900">Dashboard Overview</h2>
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+        <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Dashboard Overview</h2>
+      </div>
+
+      <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+        <p className="text-sm font-semibold text-green-900">
+          Today you have {stats.todayCheckins} check-in{stats.todayCheckins === 1 ? "" : "s"}, {stats.todayCheckouts} check-out{stats.todayCheckouts === 1 ? "" : "s"} and {stats.roomsOccupied} room{stats.roomsOccupied === 1 ? "" : "s"} occupied.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        {[
+          { label: "Today's Check-ins", value: stats.todayCheckins.toString() },
+          { label: "Today's Check-outs", value: stats.todayCheckouts.toString() },
+          { label: "Rooms Occupied", value: stats.roomsOccupied.toString() },
+          { label: "Today's Revenue", value: `NPR ${stats.todayRevenue.toLocaleString()}` },
+        ].map((stat) => (
+          <div key={stat.label} className="bg-white rounded-lg p-4 sm:p-6 shadow">
+            <p className="text-gray-500 text-xs sm:text-sm mb-1">{stat.label}</p>
+            <p className="text-lg sm:text-2xl font-bold text-gray-900 break-words">{stat.value}</p>
+          </div>
+        ))}
       </div>
 
       {/* Quick Guide */}
@@ -176,7 +230,7 @@ export default function DashboardOverview() {
       {/* HMS Stats Cards */}
       <div>
         <h3 className="text-sm font-semibold text-gray-600 mb-3 uppercase tracking-wide">Hotel Management (HMS)</h3>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           {[
             { label: "Total Bookings", value: stats.totalBookings.toString(), icon: Calendar, color: "bg-blue-100 text-blue-600", type: "bookings" as StatType },
             { label: "Room Revenue", value: `NPR ${stats.totalRevenue.toLocaleString()}`, icon: DollarSign, color: "bg-green-100 text-green-600", type: "revenue" as StatType },
@@ -188,16 +242,16 @@ export default function DashboardOverview() {
               <button
                 key={i}
                 onClick={() => setSelectedStat(stat.type)}
-                className="bg-white rounded-lg p-6 shadow hover:shadow-lg transition-shadow cursor-pointer text-left w-full"
+                className="bg-white rounded-lg p-4 sm:p-6 shadow hover:shadow-lg transition-shadow cursor-pointer text-left w-full min-w-0"
               >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-gray-500 text-sm mb-1">{stat.label}</p>
-                    <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
-                    <p className="text-xs text-gray-400 mt-1">Click for details</p>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-gray-500 text-xs sm:text-sm mb-1">{stat.label}</p>
+                    <p className="text-lg sm:text-2xl font-bold text-gray-900 break-words">{stat.value}</p>
+                    <p className="text-xs text-gray-400 mt-1 hidden sm:block">Click for details</p>
                   </div>
-                  <div className={`${stat.color} p-3 rounded-lg`}>
-                    <Icon size={24} />
+                  <div className={`${stat.color} p-2 sm:p-3 rounded-lg shrink-0`}>
+                    <Icon size={20} />
                   </div>
                 </div>
               </button>
@@ -210,14 +264,14 @@ export default function DashboardOverview() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <button
           onClick={() => setSelectedStat("restaurant")}
-          className="bg-white rounded-lg p-6 shadow border-l-4 border-l-yellow-500 hover:shadow-lg transition-shadow cursor-pointer text-left w-full"
+          className="bg-white rounded-lg p-4 sm:p-6 shadow border-l-4 border-l-yellow-500 hover:shadow-lg transition-shadow cursor-pointer text-left w-full min-w-0"
         >
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
               <p className="text-gray-500 text-sm mb-1">Restaurant Orders (RMS)</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.restaurantOrders}</p>
-              <p className="text-sm text-green-600 mt-1">NPR {stats.restaurantRevenue.toLocaleString()}</p>
-              <p className="text-xs text-gray-400 mt-1">Click for details</p>
+              <p className="text-xl sm:text-2xl font-bold text-gray-900">{stats.restaurantOrders}</p>
+              <p className="text-sm text-green-600 mt-1 break-words">NPR {stats.restaurantRevenue.toLocaleString()}</p>
+              <p className="text-xs text-gray-400 mt-1 hidden sm:block">Click for details</p>
             </div>
             <div className="bg-yellow-100 text-yellow-600 p-3 rounded-lg">
               🍽️
@@ -227,12 +281,12 @@ export default function DashboardOverview() {
 
         <button
           onClick={() => setSelectedStat("accounts")}
-          className="bg-white rounded-lg p-6 shadow border-l-4 border-l-blue-500 hover:shadow-lg transition-shadow cursor-pointer text-left w-full"
+          className="bg-white rounded-lg p-4 sm:p-6 shadow border-l-4 border-l-blue-500 hover:shadow-lg transition-shadow cursor-pointer text-left w-full min-w-0"
         >
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
               <p className="text-gray-500 text-sm mb-1">Account Balance (AMS)</p>
-              <p className={`text-2xl font-bold ${stats.accountBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              <p className={`text-xl sm:text-2xl font-bold break-words ${stats.accountBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 NPR {stats.accountBalance.toLocaleString()}
               </p>
               <p className="text-xs text-gray-500 mt-1">Total profit/loss</p>
@@ -250,61 +304,65 @@ export default function DashboardOverview() {
         <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
           💳 Payment Methods Breakdown
         </h3>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
           <div className="bg-green-50 p-4 rounded-lg border border-green-200">
             <p className="text-xs text-gray-600 mb-1">💵 Cash</p>
-            <p className="text-xl font-bold text-green-700">NPR {stats.cashPayments.toLocaleString()}</p>
+            <p className="text-base sm:text-xl font-bold text-green-700 break-words">NPR {stats.cashPayments.toLocaleString()}</p>
           </div>
           <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
             <p className="text-xs text-gray-600 mb-1">💳 Card</p>
-            <p className="text-xl font-bold text-blue-700">NPR {stats.cardPayments.toLocaleString()}</p>
+            <p className="text-base sm:text-xl font-bold text-blue-700 break-words">NPR {stats.cardPayments.toLocaleString()}</p>
           </div>
           <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
             <p className="text-xs text-gray-600 mb-1">📱 QR/Digital</p>
-            <p className="text-xl font-bold text-purple-700">NPR {stats.qrPayments.toLocaleString()}</p>
+            <p className="text-base sm:text-xl font-bold text-purple-700 break-words">NPR {stats.qrPayments.toLocaleString()}</p>
           </div>
           <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
             <p className="text-xs text-gray-600 mb-1">🏦 Bank</p>
-            <p className="text-xl font-bold text-yellow-700">NPR {stats.bankTransfers.toLocaleString()}</p>
+            <p className="text-base sm:text-xl font-bold text-yellow-700 break-words">NPR {stats.bankTransfers.toLocaleString()}</p>
           </div>
           <div className="bg-red-50 p-4 rounded-lg border border-red-200">
             <p className="text-xs text-gray-600 mb-1">📊 Credit</p>
-            <p className="text-xl font-bold text-red-700">NPR {stats.creditPayments.toLocaleString()}</p>
+            <p className="text-base sm:text-xl font-bold text-red-700 break-words">NPR {stats.creditPayments.toLocaleString()}</p>
           </div>
         </div>
       </div>
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-lg p-6 shadow">
+        <div className="bg-white rounded-lg p-4 sm:p-6 shadow min-w-0">
           <h3 className="text-lg font-semibold mb-4">Monthly Bookings</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={bookingData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="month" />
-              <YAxis />
-              <Tooltip />
-              <Bar dataKey="bookings" fill="#006B47" />
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="h-[220px] sm:h-[300px] w-full min-w-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={bookingData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+                <YAxis width={32} tick={{ fontSize: 12 }} />
+                <Tooltip />
+                <Bar dataKey="bookings" fill="#006B47" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
 
-        <div className="bg-white rounded-lg p-6 shadow">
+        <div className="bg-white rounded-lg p-4 sm:p-6 shadow min-w-0">
           <h3 className="text-lg font-semibold mb-4">Revenue Trend</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={bookingData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="month" />
-              <YAxis />
-              <Tooltip />
-              <Line type="monotone" dataKey="revenue" stroke="#F5A623" strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
+          <div className="h-[220px] sm:h-[300px] w-full min-w-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={bookingData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+                <YAxis width={40} tick={{ fontSize: 12 }} />
+                <Tooltip />
+                <Line type="monotone" dataKey="revenue" stroke="#F5A623" strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       </div>
 
       {/* Recent Bookings Table */}
-      <div className="bg-white rounded-lg p-6 shadow">
+      <div className="bg-white rounded-lg p-4 sm:p-6 shadow min-w-0">
         <h3 className="text-lg font-semibold mb-4">Recent Bookings</h3>
         <div className="overflow-x-auto">
           <table className="w-full">

@@ -177,12 +177,12 @@ export default function HeroSettingsManager() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Hero Section Settings</h2>
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Hero Section Settings</h2>
           <p className="text-sm text-gray-600">Manage images, videos, and text for the hero section</p>
         </div>
-        <Button onClick={handleSave} className="flex items-center gap-2 bg-green-600">
+        <Button onClick={handleSave} className="flex items-center justify-center gap-2 bg-green-600 w-full sm:w-auto">
           <Save size={20} />
           {isSaved ? "Saved!" : "Save Changes"}
         </Button>

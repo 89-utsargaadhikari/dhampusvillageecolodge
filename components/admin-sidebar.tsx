@@ -46,7 +46,7 @@ export default function AdminSidebar({ activeTab, setActiveTab, isOpen, onClose 
       <aside className={`
         ${isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
         fixed md:static inset-y-0 left-0 z-50
-        w-64 md:w-64 lg:w-64
+        w-[min(18rem,85vw)] md:w-64 lg:w-64
         bg-gray-900 text-white 
         transition-transform duration-300 
         flex flex-col
@@ -66,7 +66,7 @@ export default function AdminSidebar({ activeTab, setActiveTab, isOpen, onClose 
           </button>
         </div>
 
-        <nav className="flex-1 px-4 py-8 space-y-2 overflow-y-auto">
+        <nav className="flex-1 px-3 sm:px-4 py-4 sm:py-8 space-y-1 sm:space-y-2 overflow-y-auto">
           {menuItems.map((item) => (
             <button
               key={item.id}

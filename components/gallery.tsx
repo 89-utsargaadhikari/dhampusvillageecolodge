@@ -23,7 +23,7 @@ export default function Gallery() {
   }
 
   return (
-    <section id="gallery" className="pt-20 pb-0 md:pt-32 bg-gradient-to-br from-yellow-50 via-green-50 to-yellow-50 relative overflow-hidden">
+    <section id="gallery" className="scroll-mt-28 pt-20 pb-0 md:pt-32 bg-gradient-to-br from-yellow-50 via-green-50 to-yellow-50 relative overflow-hidden">
       {/* Decorative Background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-30">
         <div className="absolute top-40 right-20 w-96 h-96 bg-yellow-300 rounded-full blur-3xl animate-pulse" />
@@ -31,22 +31,22 @@ export default function Gallery() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-16 relative z-10">
-        <div className="text-center mb-20 animate-in fade-in slide-in-from-top duration-700">
+        <div className="text-center mb-10 md:mb-20 animate-in fade-in slide-in-from-top duration-700">
           <div className="inline-block mb-4">
-            <span className="text-yellow-500 font-bold text-sm uppercase tracking-[0.3em] border-2 border-yellow-500/30 px-6 py-2 rounded-full bg-yellow-50 flex items-center gap-2">
+            <span className="text-yellow-500 font-bold text-xs sm:text-sm uppercase tracking-[0.15em] sm:tracking-[0.3em] border-2 border-yellow-500/30 px-4 sm:px-6 py-2 rounded-full bg-yellow-50 flex items-center gap-2">
               <Sparkles className="w-4 h-4" />
               Visual Journey
               <Sparkles className="w-4 h-4" />
             </span>
           </div>
-          <h2 className="font-display text-5xl md:text-6xl font-bold bg-gradient-to-r from-green-700 via-yellow-600 to-green-700 bg-clip-text text-transparent mb-4">
+          <h2 className="font-display text-3xl sm:text-5xl md:text-6xl font-bold bg-gradient-to-r from-green-700 via-yellow-600 to-green-700 bg-clip-text text-transparent mb-4">
             Moments of Paradise
           </h2>
           <p className="text-lg text-gray-600">Discover the beauty that awaits you</p>
         </div>
 
         {/* Gallery Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6">
           {galleryItems.map((item, index) => (
             <button
               key={item.id}
@@ -77,7 +77,7 @@ export default function Gallery() {
             onClick={() => setSelectedId(null)}
           >
             <button
-              className="absolute top-8 right-8 text-white hover:text-yellow-400 transition-all duration-300 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full p-3 hover:scale-110 transform"
+              className="absolute top-4 right-4 sm:top-8 sm:right-8 text-white hover:text-yellow-400 transition-all duration-300 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full p-2 sm:p-3 hover:scale-110 transform"
               onClick={() => setSelectedId(null)}
             >
               <X size={32} />
@@ -85,7 +85,7 @@ export default function Gallery() {
             <img
               src={(galleryItems.find((item) => item.id === selectedId) as any)?.image || galleryItems.find((item) => item.id === selectedId)?.src || "/placeholder.svg"}
               alt="Full size"
-              className="max-w-4xl max-h-[85vh] object-contain rounded-2xl shadow-2xl animate-in zoom-in duration-500 border-4 border-yellow-400"
+              className="max-w-full max-h-[85vh] object-contain rounded-2xl shadow-2xl animate-in zoom-in duration-500 border-4 border-yellow-400"
               onClick={(e) => e.stopPropagation()}
             />
           </div>

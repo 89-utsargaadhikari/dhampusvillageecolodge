@@ -213,9 +213,9 @@ export default function AccountsManager() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">Account Management System (AMS)</h2>
-        <div className="flex gap-2">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
+        <h2 className="text-xl sm:text-2xl font-bold">Account Management System (AMS)</h2>
+        <div className="flex flex-wrap gap-2">
           {activeTab === "transactions" && (
             <>
               <Button variant="outline" onClick={handleExportExcel}>
@@ -246,7 +246,8 @@ export default function AccountsManager() {
           </TabsTrigger>
           <TabsTrigger value="credit">
             <CreditCard className="w-4 h-4 mr-2" />
-            Credit/Debt Tracking
+            <span className="hidden sm:inline">Credit/Debt Tracking</span>
+            <span className="sm:hidden">Credit</span>
           </TabsTrigger>
         </TabsList>
         
@@ -332,31 +333,31 @@ export default function AccountsManager() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b">
                 <tr>
-                  <th className="px-6 py-3 text-left text-sm font-semibold">Date</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold">Type</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold">Category</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold">Description</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold">Amount</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold">Payment</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold">Actions</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Date</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Type</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Category</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Description</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Amount</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Payment</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredTransactions.map(txn => (
                   <tr key={txn.id} className="border-b hover:bg-gray-50">
-                    <td className="px-6 py-4">{new Date(txn.date).toLocaleDateString()}</td>
-                    <td className="px-6 py-4">
+                    <td className="px-3 sm:px-6 py-4">{new Date(txn.date).toLocaleDateString()}</td>
+                    <td className="px-3 sm:px-6 py-4">
                       <Badge variant={txn.type === "income" ? "default" : "destructive"}>
                         {txn.type}
                       </Badge>
                     </td>
-                    <td className="px-6 py-4">{txn.category}</td>
-                    <td className="px-6 py-4">{txn.description}</td>
-                    <td className="px-6 py-4 font-bold">{txn.currency} {txn.amount.toLocaleString()}</td>
-                    <td className="px-6 py-4">
+                    <td className="px-3 sm:px-6 py-4">{txn.category}</td>
+                    <td className="px-3 sm:px-6 py-4">{txn.description}</td>
+                    <td className="px-3 sm:px-6 py-4 font-bold whitespace-nowrap">{txn.currency} {txn.amount.toLocaleString()}</td>
+                    <td className="px-3 sm:px-6 py-4">
                       <Badge variant="outline">{txn.paymentMethod}</Badge>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-3 sm:px-6 py-4">
                       <Button size="sm" variant="destructive" onClick={() => handleDelete(txn.id)}>
                         Delete
                       </Button>

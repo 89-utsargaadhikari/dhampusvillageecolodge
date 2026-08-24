@@ -343,12 +343,12 @@ export default function PaymentDashboard() {
       {/* Filters and Export */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
               <CardTitle>Payment History</CardTitle>
               <CardDescription>Filter and view all recorded payments</CardDescription>
             </div>
-            <Button onClick={exportToCSV} variant="outline" size="sm">
+            <Button onClick={exportToCSV} variant="outline" size="sm" className="w-full sm:w-auto">
               <Download className="w-4 h-4 mr-2" />
               Export CSV
             </Button>
@@ -356,7 +356,7 @@ export default function PaymentDashboard() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap gap-4">
-            <div className="flex-1 min-w-[200px]">
+            <div className="flex-1 min-w-0 sm:min-w-[200px]">
               <Label className="text-sm mb-2 flex items-center gap-2">
                 <Filter className="w-4 h-4" />
                 Payment Method
@@ -376,7 +376,7 @@ export default function PaymentDashboard() {
               </Select>
             </div>
 
-            <div className="flex-1 min-w-[200px]">
+            <div className="flex-1 min-w-0 sm:min-w-[200px]">
               <Label className="text-sm mb-2 flex items-center gap-2">
                 <Calendar className="w-4 h-4" />
                 Date

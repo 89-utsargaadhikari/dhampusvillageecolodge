@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Plus, Edit, Trash2, ShoppingCart, Package, AlertCircle } from "lucide-react"
+import { Plus, Edit, Trash2, ShoppingCart, Package, AlertCircle, Search } from "lucide-react"
+import { calculateInclusiveVat } from "@/lib/vat"
 import { fetchBookings } from "@/lib/api"
 import { 
   fetchRestaurantMenu, 
@@ -21,6 +22,16 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
+import { COUNTABLE_UNITS, isCountableUnit } from "@/lib/inventory-units"
+
+interface InventoryLink {
+  id: number
+  name: string
+  unit: string
+  storeStock: number
+  barStock: number
+  currentStock: number
+}
 
 interface MenuItem {
   id: number
@@ -30,6 +41,7 @@ interface MenuItem {
   category: string
   image?: string | null
   available: boolean
+  inventoryItem?: InventoryLink | null
 }
 
 interface Order {
@@ -63,6 +75,13 @@ export default function RestaurantManager() {
   const [discountType, setDiscountType] = useState<"percentage" | "amount">("percentage")
   const [discountValue, setDiscountValue] = useState(0)
   const [orderType, setOrderType] = useState<"room_service" | "walk_in">("room_service")
+  const [menuSearch, setMenuSearch] = useState("")
+  const [menuCategory, setMenuCategory] = useState("food")
+  const [trackStock, setTrackStock] = useState(false)
+  const [addStockUnit, setAddStockUnit] = useState("bottles")
+  const [stockQty, setStockQty] = useState<Record<number, string>>({})
+  const [linkQty, setLinkQty] = useState<Record<number, string>>({})
+  const [linkUnit, setLinkUnit] = useState<Record<number, string>>({})
 
   // Load data from database
   useEffect(() => {
@@ -98,14 +117,74 @@ export default function RestaurantManager() {
   }
 
   // Menu Management
-  const handleAddMenuItem = async (item: Omit<MenuItem, "id">) => {
+  const handleAddMenuItem = async (item: Omit<MenuItem, "id"> & { trackStock?: boolean; stock?: number; stockUnit?: string; minStock?: number }) => {
     try {
       await createMenuItem(item)
       await loadData()
       setIsDialogOpen(false)
+      setMenuCategory("food")
+      setTrackStock(false)
     } catch (error) {
       console.error('Failed to add menu item:', error)
       alert('Failed to add menu item')
+    }
+  }
+
+  const handleTrackMenuStock = async (menuItem: MenuItem, stock: number, unit: string) => {
+    try {
+      const response = await fetch("/api/inventory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: menuItem.name,
+          category: menuItem.category === "food" || menuItem.category === "snacks" ? "Other" : "Beverages",
+          unit,
+          storeStock: 0,
+          barStock: stock,
+          goodStockLevel: 20,
+          lowStockLevel: 5,
+          criticalStockLevel: 1,
+          menuItemId: menuItem.id
+        })
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        alert(data.error || "Failed to start tracking stock")
+        return
+      }
+      await loadData()
+    } catch (error) {
+      console.error("Failed to track stock:", error)
+      alert("Failed to start tracking stock")
+    }
+  }
+
+  const handleUpdateBarStock = async (inventoryId: number, changeAmount: number) => {
+    if (!Number.isFinite(changeAmount) || changeAmount === 0) {
+      alert("Enter a quantity to add or use")
+      return
+    }
+    try {
+      const response = await fetch(`/api/inventory/${inventoryId}/update-stock`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          changeAmount,
+          transactionType: changeAmount > 0 ? "purchase" : "usage",
+          location: "bar",
+          notes: "Updated from RMS"
+        })
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        alert(data.error || "Failed to update stock")
+        return
+      }
+      setStockQty({ ...stockQty, [inventoryId]: "" })
+      await loadData()
+    } catch (error) {
+      console.error("Failed to update stock:", error)
+      alert("Failed to update stock")
     }
   }
 
@@ -136,21 +215,13 @@ export default function RestaurantManager() {
     try {
       console.log('🔵 Frontend: Starting order creation', orderData)
       
-      const subtotal = orderData.items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0)
-      
-      // Calculate discount
-      let discountAmount = 0
-      if (orderData.discountValue > 0) {
-        if (orderData.discountType === "percentage") {
-          discountAmount = (subtotal * orderData.discountValue) / 100
-        } else {
-          discountAmount = orderData.discountValue
-        }
-      }
-      
-      const afterDiscount = subtotal - discountAmount
-      const tax = (afterDiscount * orderData.taxPercentage) / 100
-      const total = afterDiscount + tax
+      const inclusiveSubtotal = orderData.items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0)
+      const totals = calculateInclusiveVat({
+        inclusiveSubtotal,
+        vatPercent: orderData.taxPercentage,
+        discountType: orderData.discountType,
+        discountValue: orderData.discountValue
+      })
       
       const orderPayload = {
         orderNumber: `ORD-${Date.now()}`,
@@ -160,13 +231,13 @@ export default function RestaurantManager() {
         bookingId: orderData.orderType === "walk_in" ? null : (bookings.find((b: any) => b.roomNumber === orderData.roomNumber)?.id || null),
         orderType: orderData.orderType,
         items: orderData.items,
-        subtotal,
+        subtotal: totals.inclusiveSubtotal,
         discountType: orderData.discountType,
         discountValue: orderData.discountValue,
-        discountAmount,
-        tax,
+        discountAmount: totals.discountAmount,
+        tax: totals.vatAmount,
         taxPercentage: orderData.taxPercentage,
-        total,
+        total: totals.total,
         status: "pending",
         paymentStatus: "unpaid",
         paymentMethod: null
@@ -181,12 +252,10 @@ export default function RestaurantManager() {
       addNotification(
         "order",
         "New Restaurant Order",
-        `Order #${orderPayload.orderNumber} - ${orderData.orderType === "walk_in" ? `Table ${orderData.tableNumber} • ${orderPayload.guestName}` : `Room ${orderPayload.roomNumber} (${orderPayload.guestName})`} - NPR ${total.toFixed(2)}`,
+        `Order #${orderPayload.orderNumber} - ${orderData.orderType === "walk_in" ? `Table ${orderData.tableNumber} • ${orderPayload.guestName}` : `Room ${orderPayload.roomNumber} (${orderPayload.guestName})`} - NPR ${totals.total.toFixed(2)}`,
         "high",
         "restaurant"
       )
-      
-      // TODO: Inventory deduction will be implemented with the inventory management system
       
       await loadData()
       setIsOrderDialogOpen(false)
@@ -209,31 +278,23 @@ export default function RestaurantManager() {
       console.log('🔵 Frontend: Starting order update', orderData)
       console.log('🔵 Editing order:', editingOrder)
       
-      const subtotal = orderData.items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0)
-      
-      // Calculate discount
-      let discountAmount = 0
-      if (orderData.discountValue > 0) {
-        if (orderData.discountType === "percentage") {
-          discountAmount = (subtotal * orderData.discountValue) / 100
-        } else {
-          discountAmount = orderData.discountValue
-        }
-      }
-      
-      const afterDiscount = subtotal - discountAmount
-      const tax = (afterDiscount * orderData.taxPercentage) / 100
-      const total = afterDiscount + tax
+      const inclusiveSubtotal = orderData.items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0)
+      const totals = calculateInclusiveVat({
+        inclusiveSubtotal,
+        vatPercent: orderData.taxPercentage,
+        discountType: orderData.discountType,
+        discountValue: orderData.discountValue
+      })
       
       const orderPayload = {
         items: orderData.items,
-        subtotal,
+        subtotal: totals.inclusiveSubtotal,
         discountType: orderData.discountType,
         discountValue: orderData.discountValue,
-        discountAmount,
-        tax,
+        discountAmount: totals.discountAmount,
+        tax: totals.vatAmount,
         taxPercentage: orderData.taxPercentage,
-        total,
+        total: totals.total,
       }
       
       console.log('🔵 Frontend: Sending update payload to API', orderPayload)
@@ -257,9 +318,9 @@ export default function RestaurantManager() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">Restaurant Management System (RMS)</h2>
-        <div className="flex gap-2">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+        <h2 className="text-xl sm:text-2xl font-bold">Restaurant Management System (RMS)</h2>
+        <div className="flex flex-wrap gap-2">
           <Button
             variant={activeTab === "menu" ? "default" : "outline"}
             onClick={() => setActiveTab("menu")}
@@ -284,19 +345,19 @@ export default function RestaurantManager() {
       {/* MENU TAB */}
       {activeTab === "menu" && (
         <div className="space-y-4">
-          <div className="flex justify-between">
+          <div className="flex flex-col sm:flex-row sm:justify-between gap-2">
             <h3 className="text-lg font-semibold">Menu Items</h3>
-            <Button onClick={() => setIsDialogOpen(true)}>
+            <Button onClick={() => setIsDialogOpen(true)} className="w-full sm:w-auto">
               <Plus className="w-4 h-4 mr-2" />
               Add Menu Item
             </Button>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {menuItems.map(item => (
               <Card key={item.id}>
                 <CardHeader>
-                  <CardTitle className="flex justify-between items-start">
+                  <CardTitle className="flex flex-wrap justify-between items-start gap-2">
                     <span>{item.name}</span>
                     <Badge>{item.category}</Badge>
                   </CardTitle>
@@ -305,6 +366,11 @@ export default function RestaurantManager() {
                   <div className="space-y-2">
                     <p className="text-2xl font-bold text-primary">NPR {item.price}</p>
                     <p className="text-sm text-gray-600">Category: {item.category}</p>
+                    {item.inventoryItem && isCountableUnit(item.inventoryItem.unit) && (
+                      <p className="text-sm text-emerald-700">
+                        Bar stock: {item.inventoryItem.barStock} {item.inventoryItem.unit}
+                      </p>
+                    )}
                     <div className="flex gap-2 pt-2">
                       <Button 
                         size="sm" 
@@ -327,9 +393,9 @@ export default function RestaurantManager() {
       {/* ORDERS TAB */}
       {activeTab === "orders" && (
         <div className="space-y-4">
-          <div className="flex justify-between">
+          <div className="flex flex-col sm:flex-row sm:justify-between gap-2">
             <h3 className="text-lg font-semibold">Orders</h3>
-            <Button onClick={() => setIsOrderDialogOpen(true)}>
+            <Button onClick={() => setIsOrderDialogOpen(true)} className="w-full sm:w-auto">
               <ShoppingCart className="w-4 h-4 mr-2" />
               New Order
             </Button>
@@ -460,7 +526,11 @@ export default function RestaurantManager() {
                           </div>
                         )}
                         <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">Tax ({order.taxPercentage}%):</span>
+                          <span className="text-gray-600">VAT exclusive:</span>
+                          <span>NPR {(order.total - order.tax).toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">VAT ({order.taxPercentage}% incl.):</span>
                           <span>NPR {order.tax.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between font-bold">
@@ -480,10 +550,15 @@ export default function RestaurantManager() {
       {/* INVENTORY TAB */}
       {activeTab === "inventory" && (
         <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h3 className="text-lg font-semibold">Inventory Management</h3>
-            <Badge className="bg-blue-600">
-              {menuItems.length} Total Items
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+            <div>
+              <h3 className="text-lg font-semibold">RMS Stock</h3>
+              <p className="text-sm text-gray-600">
+                Countable items (bottles, pieces, cans) deduct from bar stock when sold. Transfer from Inventory when the bar needs more.
+              </p>
+            </div>
+            <Badge className="bg-blue-600 w-fit">
+              {menuItems.filter((item) => item.inventoryItem).length} / {menuItems.length} tracked
             </Badge>
           </div>
           
@@ -491,25 +566,91 @@ export default function RestaurantManager() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b">
                 <tr>
-                  <th className="px-6 py-3 text-left text-sm font-semibold">Item</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold">Category</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold">Price</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold">Status</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Item</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Category</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Store / Bar</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Update bar</th>
                 </tr>
               </thead>
               <tbody>
                 {menuItems.map(item => (
                   <tr key={item.id} className="border-b hover:bg-gray-50">
-                    <td className="px-6 py-4 font-medium">{item.name}</td>
-                    <td className="px-6 py-4">
+                    <td className="px-3 sm:px-6 py-4 font-medium">{item.name}</td>
+                    <td className="px-3 sm:px-6 py-4">
                       <Badge variant="outline">{item.category}</Badge>
                     </td>
-                    <td className="px-6 py-4 font-bold">NPR {item.price}</td>
-                    <td className="px-6 py-4">
-                      {item.available ? (
-                        <Badge className="bg-green-600">Available</Badge>
+                    <td className="px-3 sm:px-6 py-4">
+                      {item.inventoryItem ? (
+                        <div className="text-sm">
+                          <p>{item.inventoryItem.storeStock} / {item.inventoryItem.barStock} {item.inventoryItem.unit}</p>
+                          {item.inventoryItem.barStock <= 5 && (
+                            <p className="text-orange-600 text-xs">Low bar stock</p>
+                          )}
+                        </div>
                       ) : (
-                        <Badge variant="destructive">Unavailable</Badge>
+                        <span className="text-sm text-gray-500">Not tracked</span>
+                      )}
+                    </td>
+                    <td className="px-3 sm:px-6 py-4">
+                      {item.inventoryItem ? (
+                        <div className="flex gap-2 items-center">
+                          <Input
+                            type="number"
+                            min="1"
+                            placeholder="Qty"
+                            className="w-20"
+                            value={stockQty[item.inventoryItem.id] || ""}
+                            onChange={(e) => setStockQty({ ...stockQty, [item.inventoryItem!.id]: e.target.value })}
+                          />
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleUpdateBarStock(item.inventoryItem!.id, parseFloat(stockQty[item.inventoryItem!.id] || "0"))}
+                          >
+                            Add
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleUpdateBarStock(item.inventoryItem!.id, -parseFloat(stockQty[item.inventoryItem!.id] || "0"))}
+                          >
+                            Use
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2 items-center">
+                          <Select
+                            value={linkUnit[item.id] || (item.category === "bar" || item.category === "drinks" ? "bottles" : "pieces")}
+                            onValueChange={(value) => setLinkUnit({ ...linkUnit, [item.id]: value })}
+                          >
+                            <SelectTrigger className="w-28">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {COUNTABLE_UNITS.map((unit) => (
+                                <SelectItem key={unit} value={unit}>{unit}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            type="number"
+                            min="0"
+                            placeholder="Bar qty"
+                            className="w-24"
+                            value={linkQty[item.id] || ""}
+                            onChange={(e) => setLinkQty({ ...linkQty, [item.id]: e.target.value })}
+                          />
+                          <Button
+                            size="sm"
+                            onClick={() => handleTrackMenuStock(
+                              item,
+                              parseFloat(linkQty[item.id] || "0") || 0,
+                              linkUnit[item.id] || (item.category === "bar" || item.category === "drinks" ? "bottles" : "pieces")
+                            )}
+                          >
+                            Track
+                          </Button>
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -521,7 +662,14 @@ export default function RestaurantManager() {
       )}
 
       {/* Add Menu Item Dialog */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <Dialog open={isDialogOpen} onOpenChange={(open) => {
+        setIsDialogOpen(open)
+        if (!open) {
+          setMenuCategory("food")
+          setTrackStock(false)
+          setAddStockUnit("bottles")
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add Menu Item</DialogTitle>
@@ -529,20 +677,24 @@ export default function RestaurantManager() {
           <form onSubmit={(e) => {
             e.preventDefault()
             const formData = new FormData(e.currentTarget)
-            const category = formData.get("category") as string
+            const category = menuCategory
             handleAddMenuItem({
               name: formData.get("name") as string,
               price: parseFloat(formData.get("price") as string),
               category: category,
               description: "",
-              available: true
+              available: true,
+              trackStock: trackStock || Number(formData.get("stock")) > 0,
+              stock: parseFloat(formData.get("stock") as string) || 0,
+              stockUnit: addStockUnit,
+              minStock: parseFloat(formData.get("minStock") as string) || 5
             })
           }} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name">Item Name *</Label>
               <Input id="name" name="name" required />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="price">Price (NPR) *</Label>
                 <Input id="price" name="price" type="number" required />
@@ -552,10 +704,14 @@ export default function RestaurantManager() {
                 <Select 
                   name="category" 
                   required
+                  value={menuCategory}
                   onValueChange={(value) => {
-                    const stockFields = document.getElementById("stockFields")
-                    if (stockFields) {
-                      stockFields.style.display = value === "bar" ? "grid" : "none"
+                    setMenuCategory(value)
+                    if (value === "bar" || value === "drinks") {
+                      setTrackStock(true)
+                      setAddStockUnit("bottles")
+                    } else if (value === "food" || value === "snacks") {
+                      setAddStockUnit("pieces")
                     }
                   }}
                 >
@@ -571,15 +727,40 @@ export default function RestaurantManager() {
                 </Select>
               </div>
             </div>
-            <div id="stockFields" className="grid grid-cols-2 gap-4" style={{ display: 'none' }}>
-              <div className="space-y-2">
-                <Label htmlFor="stock">Initial Stock (Bar items only)</Label>
-                <Input id="stock" name="stock" type="number" defaultValue="0" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="minStock">Min Stock Alert</Label>
-                <Input id="minStock" name="minStock" type="number" defaultValue="0" />
-              </div>
+            <div className="space-y-3 border rounded-lg p-3">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={trackStock}
+                  onChange={(e) => setTrackStock(e.target.checked)}
+                />
+                Track countable stock (bottles, pieces, cans)
+              </label>
+              {trackStock && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="stockUnit">Unit</Label>
+                    <Select value={addStockUnit} onValueChange={setAddStockUnit}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {COUNTABLE_UNITS.map((unit) => (
+                          <SelectItem key={unit} value={unit}>{unit}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="stock">Bar stock now</Label>
+                    <Input id="stock" name="stock" type="number" min="0" defaultValue="0" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="minStock">Low stock alert</Label>
+                    <Input id="minStock" name="minStock" type="number" min="0" defaultValue="5" />
+                  </div>
+                </div>
+              )}
             </div>
             <div className="flex gap-2 pt-4">
               <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)} className="flex-1">
@@ -601,6 +782,7 @@ export default function RestaurantManager() {
           setDiscountType("percentage")
           setDiscountValue(0)
           setOrderType("room_service")
+          setMenuSearch("")
         }
       }}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -673,7 +855,7 @@ export default function RestaurantManager() {
 
             {/* Room & Guest Info - Only show for room service or when editing */}
             {(orderType === "room_service" || editingOrder) && (
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="roomNumber">Room Number *</Label>
                 {editingOrder ? (
@@ -732,7 +914,7 @@ export default function RestaurantManager() {
 
             {/* Walk-in specific fields */}
             {orderType === "walk_in" && !editingOrder && (
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="walkInGuestName">Guest Name</Label>
                   <Input 
@@ -756,15 +938,33 @@ export default function RestaurantManager() {
             {/* Menu Items Selection */}
             <div className="space-y-2">
               <Label>Add Items to Order</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Input
+                  value={menuSearch}
+                  onChange={(e) => setMenuSearch(e.target.value)}
+                  placeholder="Search food or drinks..."
+                  className="pl-9"
+                />
+              </div>
               <div className="border rounded-lg p-4 space-y-3 max-h-64 overflow-y-auto">
                 {menuItems.length === 0 ? (
                   <p className="text-center text-gray-500 py-4">No menu items available. Please add menu items first.</p>
                 ) : (
-                  menuItems.filter(item => item.available).map(item => (
+                  menuItems.filter(item => item.available && (
+                    !menuSearch ||
+                    item.name.toLowerCase().includes(menuSearch.toLowerCase()) ||
+                    item.category.toLowerCase().includes(menuSearch.toLowerCase())
+                  )).map(item => (
                     <div key={item.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
                       <div className="flex-1">
                         <p className="font-medium">{item.name}</p>
                         <p className="text-sm text-gray-600">NPR {item.price} • {item.category}</p>
+                        {item.inventoryItem && isCountableUnit(item.inventoryItem.unit) && (
+                          <p className={`text-xs ${item.inventoryItem.barStock <= 0 ? "text-red-600" : "text-emerald-700"}`}>
+                            Bar: {item.inventoryItem.barStock} {item.inventoryItem.unit}
+                          </p>
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
                         <Input
@@ -813,7 +1013,7 @@ export default function RestaurantManager() {
                   ))}
                   <div className="border-t border-blue-300 pt-2 mt-2">
                     <div className="flex justify-between text-sm">
-                      <span>Subtotal:</span>
+                      <span>Inclusive subtotal:</span>
                       <span>NPR {selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0).toFixed(2)}</span>
                     </div>
                     
@@ -850,21 +1050,21 @@ export default function RestaurantManager() {
                       </div>
                       {discountValue > 0 && (
                         <div className="flex justify-between text-sm text-green-700">
-                          <span>Discount Amount:</span>
+                          <span>Discount (on exclusive):</span>
                           <span>
-                            - NPR {(() => {
-                              const subtotal = selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0)
-                              return discountType === "percentage" 
-                                ? ((subtotal * discountValue) / 100).toFixed(2)
-                                : discountValue.toFixed(2)
-                            })()}
+                            - NPR {calculateInclusiveVat({
+                              inclusiveSubtotal: selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0),
+                              vatPercent: taxPercentage,
+                              discountType,
+                              discountValue
+                            }).discountAmount.toFixed(2)}
                           </span>
                         </div>
                       )}
                     </div>
                     
                     <div className="flex justify-between text-sm items-center mt-2">
-                      <span>Tax:</span>
+                      <span>VAT:</span>
                       <div className="flex items-center gap-2">
                         <Input
                           name="taxPercentage"
@@ -874,34 +1074,40 @@ export default function RestaurantManager() {
                           onChange={(e) => setTaxPercentage(parseFloat(e.target.value) || 0)}
                           className="w-20 h-8"
                         />
-                        <span>%</span>
+                        <span>% incl.</span>
                       </div>
                     </div>
                     <div className="flex justify-between text-sm text-gray-600">
-                      <span>Tax Amount:</span>
+                      <span>Exclusive amt:</span>
                       <span>
-                        NPR {(() => {
-                          const subtotal = selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0)
-                          const discountAmt = discountType === "percentage" 
-                            ? (subtotal * discountValue) / 100 
-                            : discountValue
-                          const afterDiscount = subtotal - discountAmt
-                          return ((afterDiscount * taxPercentage) / 100).toFixed(2)
-                        })()}
+                        NPR {calculateInclusiveVat({
+                          inclusiveSubtotal: selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0),
+                          vatPercent: taxPercentage,
+                          discountType,
+                          discountValue
+                        }).discountedExclusive.toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm text-gray-600">
+                      <span>VAT amount:</span>
+                      <span>
+                        NPR {calculateInclusiveVat({
+                          inclusiveSubtotal: selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0),
+                          vatPercent: taxPercentage,
+                          discountType,
+                          discountValue
+                        }).vatAmount.toFixed(2)}
                       </span>
                     </div>
                     <div className="flex justify-between font-bold text-lg pt-2 border-t border-blue-300">
                       <span>Total:</span>
                       <span className="text-primary">
-                        NPR {(() => {
-                          const subtotal = selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0)
-                          const discountAmt = discountType === "percentage" 
-                            ? (subtotal * discountValue) / 100 
-                            : discountValue
-                          const afterDiscount = subtotal - discountAmt
-                          const tax = (afterDiscount * taxPercentage) / 100
-                          return (afterDiscount + tax).toFixed(2)
-                        })()}
+                        NPR {calculateInclusiveVat({
+                          inclusiveSubtotal: selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0),
+                          vatPercent: taxPercentage,
+                          discountType,
+                          discountValue
+                        }).total.toFixed(2)}
                       </span>
                     </div>
                   </div>

@@ -100,13 +100,13 @@ export default function BookingStatusPage() {
     <div className="min-h-screen bg-gradient-to-br from-primary/5 to-accent/5">
       {/* Header */}
       <header className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-3">
+          <Link href="/" className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center shrink-0">
               <span className="text-white font-display text-lg font-bold">D</span>
             </div>
-            <div>
-              <p className="font-display font-semibold text-primary">Dhampus Eco Lodge</p>
+            <div className="min-w-0">
+              <p className="font-display font-semibold text-primary truncate">Dhampus Eco Lodge</p>
             </div>
           </Link>
           <Link href="/booking">
@@ -117,7 +117,7 @@ export default function BookingStatusPage() {
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="text-center mb-12">
-          <h1 className="text-4xl md:text-5xl font-display font-bold text-primary mb-4">Check Booking Status</h1>
+          <h1 className="text-3xl sm:text-4xl md:text-5xl font-display font-bold text-primary mb-4">Check Booking Status</h1>
           <p className="text-lg text-gray-600">Enter your email to view your booking details</p>
         </div>
 

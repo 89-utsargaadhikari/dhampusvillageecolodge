@@ -19,12 +19,12 @@ export default function ScrollProgress() {
   return (
     <>
       {/* Progress Bar */}
-      <div className="fixed top-0 left-0 w-full h-1 bg-gray-200/50 z-[100]">
+      <div className="fixed top-0 left-0 z-[100] h-0.5 w-full bg-transparent">
         <div
-          className="h-full bg-gradient-to-r from-green-600 via-yellow-500 to-green-600 transition-all duration-150 ease-out shadow-lg"
-          style={{ 
+          className="h-full bg-gradient-to-r from-[#C9A227] via-[#E4B84A] to-[#C9A227] transition-all duration-150 ease-out"
+          style={{
             width: `${scrollProgress}%`,
-            boxShadow: '0 0 10px rgba(234, 179, 8, 0.5)'
+            boxShadow: "0 0 10px rgba(228, 184, 74, 0.55)",
           }}
         />
       </div>
