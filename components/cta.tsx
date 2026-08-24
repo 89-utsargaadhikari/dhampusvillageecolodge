@@ -3,7 +3,7 @@ import { Sparkles, Phone, Mail, MapPin } from "lucide-react"
 
 export default function CTA() {
   return (
-    <section id="contact" className="pt-20 pb-16 bg-gradient-to-br from-green-700 via-green-600 to-yellow-600 text-white relative overflow-hidden">
+    <section id="contact" className="scroll-mt-28 pt-20 pb-16 bg-gradient-to-br from-green-700 via-green-600 to-yellow-600 text-white relative overflow-hidden">
       {/* Decorative Elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-10 right-10 w-64 h-64 bg-yellow-400 rounded-full blur-3xl opacity-20 animate-pulse" />
@@ -20,16 +20,16 @@ export default function CTA() {
             </span>
           </div>
           
-          <h2 className="font-display text-5xl md:text-6xl font-bold mb-6 drop-shadow-2xl">
+          <h2 className="font-display text-3xl sm:text-5xl md:text-6xl font-bold mb-6 drop-shadow-2xl">
             Your Himalayan Adventure Awaits
           </h2>
           
-          <p className="text-xl text-white/95 mb-12 max-w-2xl mx-auto leading-relaxed drop-shadow-lg">
+          <p className="text-base sm:text-xl text-white/95 mb-8 sm:mb-12 max-w-2xl mx-auto leading-relaxed drop-shadow-lg">
             Book your stay at Dhampus Eco Lodge and experience luxury immersed in the breathtaking beauty of the Himalayas
           </p>
 
           <div className="max-w-2xl mx-auto mb-12">
-            <Link href="/booking" className="inline-block w-full sm:w-auto bg-gradient-to-r from-yellow-400 to-yellow-500 hover:from-yellow-500 hover:to-yellow-600 text-gray-900 font-bold text-lg py-5 px-12 rounded-full transition-all duration-300 transform hover:scale-110 shadow-2xl hover:shadow-yellow-500/50">
+            <Link href="/booking" className="inline-block w-full sm:w-auto bg-gradient-to-r from-yellow-400 to-yellow-500 hover:from-yellow-500 hover:to-yellow-600 text-gray-900 font-bold text-base sm:text-lg py-4 sm:py-5 px-6 sm:px-12 rounded-full transition-all duration-300 transform hover:scale-105 sm:hover:scale-110 shadow-2xl hover:shadow-yellow-500/50">
               <span className="flex items-center justify-center gap-3">
                 <Sparkles className="w-6 h-6" />
                 Book Your Luxury Stay Now

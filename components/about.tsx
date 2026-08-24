@@ -2,7 +2,7 @@ import { Star, Sparkles } from "lucide-react"
 
 export default function About() {
   return (
-    <section id="about" className="py-20 md:py-32 bg-gradient-to-br from-green-50 via-white to-yellow-50 relative overflow-hidden">
+    <section id="about" className="scroll-mt-28 py-20 md:py-32 bg-gradient-to-br from-green-50 via-white to-yellow-50 relative overflow-hidden">
       {/* Decorative Background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-20">
         <div className="absolute top-20 right-20 w-96 h-96 bg-green-300 rounded-full blur-3xl animate-pulse" />
@@ -10,7 +10,7 @@ export default function About() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-        <div className="grid md:grid-cols-2 gap-16 items-center">
+        <div className="grid md:grid-cols-2 gap-8 md:gap-16 items-center">
           {/* Image */}
           <div className="relative animate-in fade-in slide-in-from-left duration-700">
             <div className="relative group">
@@ -24,7 +24,7 @@ export default function About() {
             </div>
             
             {/* Floating Badge */}
-            <div className="absolute -top-6 -right-6 bg-gradient-to-br from-yellow-400 to-yellow-500 text-white px-6 py-4 rounded-2xl shadow-2xl transform rotate-6 hover:rotate-0 transition-all duration-300">
+            <div className="absolute top-3 right-3 sm:-top-6 sm:-right-6 bg-gradient-to-br from-yellow-400 to-yellow-500 text-white px-4 py-3 sm:px-6 sm:py-4 rounded-2xl shadow-2xl transform rotate-3 sm:rotate-6 hover:rotate-0 transition-all duration-300">
               <div className="flex items-center gap-2">
                 <Star className="w-5 h-5 fill-white" />
                 <Star className="w-5 h-5 fill-white" />
@@ -39,13 +39,13 @@ export default function About() {
           {/* Content */}
           <div className="animate-in fade-in slide-in-from-right duration-700 delay-200">
             <div className="inline-block mb-6">
-              <span className="text-yellow-500 font-bold text-sm uppercase tracking-[0.3em] border-2 border-yellow-500/30 px-6 py-2 rounded-full bg-yellow-50 flex items-center gap-2">
+              <span className="text-yellow-500 font-bold text-xs sm:text-sm uppercase tracking-[0.15em] sm:tracking-[0.3em] border-2 border-yellow-500/30 px-4 sm:px-6 py-2 rounded-full bg-yellow-50 flex items-center gap-2">
                 <Sparkles className="w-4 h-4" />
                 About Us
               </span>
             </div>
             
-            <h2 className="font-display text-5xl md:text-6xl mb-6 font-bold bg-gradient-to-r from-green-700 to-yellow-600 bg-clip-text text-transparent">
+            <h2 className="font-display text-3xl sm:text-5xl md:text-6xl mb-6 font-bold bg-gradient-to-r from-green-700 to-yellow-600 bg-clip-text text-transparent">
               Himalayan Sanctuary
             </h2>
             
@@ -61,7 +61,7 @@ export default function About() {
               discerning traveler.
             </p>
 
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-2 gap-3 sm:gap-6">
               {[
                 { number: "15+", label: "Luxury Rooms", icon: "🏡" },
                 { number: "1,650m", label: "Altitude", icon: "⛰️" },
@@ -70,11 +70,11 @@ export default function About() {
               ].map((stat, index) => (
                 <div 
                   key={stat.label} 
-                  className="group bg-gradient-to-br from-green-50 to-yellow-50 p-6 rounded-2xl border-2 border-green-200 hover:border-yellow-400 transition-all duration-300 hover:shadow-lg transform hover:scale-105 animate-in fade-in zoom-in"
+                  className="group bg-gradient-to-br from-green-50 to-yellow-50 p-4 sm:p-6 rounded-2xl border-2 border-green-200 hover:border-yellow-400 transition-all duration-300 hover:shadow-lg transform hover:scale-105 animate-in fade-in zoom-in"
                   style={{ animationDelay: `${(index + 1) * 150}ms` }}
                 >
                   <div className="text-3xl mb-2 group-hover:scale-125 transition-transform duration-300">{stat.icon}</div>
-                  <p className="text-4xl font-display font-bold bg-gradient-to-r from-green-600 to-yellow-600 bg-clip-text text-transparent mb-2 group-hover:scale-110 transition-transform duration-300">
+                  <p className="text-2xl sm:text-4xl font-display font-bold bg-gradient-to-r from-green-600 to-yellow-600 bg-clip-text text-transparent mb-2 group-hover:scale-110 transition-transform duration-300">
                     {stat.number}
                   </p>
                   <p className="text-sm text-gray-600 font-semibold">{stat.label}</p>

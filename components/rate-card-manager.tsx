@@ -7,11 +7,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { CURRENCIES, MEAL_PLANS, currencySymbol } from "@/lib/hotel"
 
 interface RateCard {
   id: number
   roomType: string
   mealPlan: string
+  currency?: string
   sglRate: number | null
   dblRate: number | null
   trplRate: number | null
@@ -23,19 +25,13 @@ interface Props {
   roomTypes: string[] // Pass available room types
 }
 
-const MEAL_PLANS = [
-  { value: "EP", label: "EP (European Plan - Room Only)" },
-  { value: "BB", label: "BB (Bed & Breakfast)" },
-  { value: "MAP", label: "MAP (Modified American Plan - Breakfast + Dinner)" },
-  { value: "AP", label: "AP (American Plan - All Meals)" }
-]
-
 export default function RateCardManager({ businessId, businessName, roomTypes }: Props) {
   const [rates, setRates] = useState<RateCard[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [formData, setFormData] = useState({
     roomType: "",
     mealPlan: "EP",
+    currency: "NPR",
     sglRate: "",
     dblRate: "",
     trplRate: ""
@@ -72,6 +68,7 @@ export default function RateCardManager({ businessId, businessName, roomTypes }:
         setFormData({
           roomType: "",
           mealPlan: "EP",
+          currency: "NPR",
           sglRate: "",
           dblRate: "",
           trplRate: ""
@@ -108,9 +105,9 @@ export default function RateCardManager({ businessId, businessName, roomTypes }:
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <h3 className="text-lg font-semibold">Rate Cards for {businessName}</h3>
-        <Button onClick={() => setIsDialogOpen(true)} className="bg-green-600">
+        <Button onClick={() => setIsDialogOpen(true)} className="bg-green-600 w-full sm:w-auto">
           <Plus className="w-4 h-4 mr-2" />
           Add Rate
         </Button>
@@ -134,36 +131,55 @@ export default function RateCardManager({ businessId, businessName, roomTypes }:
                   <div>
                     <div className="font-bold text-lg">{rate.roomType}</div>
                     <div className="text-sm text-blue-600 font-semibold">
-                      {MEAL_PLANS.find(p => p.value === rate.mealPlan)?.label}
+                      {MEAL_PLANS.find(p => p.value === rate.mealPlan)?.label} • {rate.currency || "NPR"}
                     </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleDelete(rate.id)}
-                    className="text-destructive hover:text-destructive"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
+                  <div className="flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setFormData({
+                          roomType: rate.roomType,
+                          mealPlan: rate.mealPlan,
+                          currency: rate.currency || "NPR",
+                          sglRate: rate.sglRate?.toString() || "",
+                          dblRate: rate.dblRate?.toString() || "",
+                          trplRate: rate.trplRate?.toString() || ""
+                        })
+                        setIsDialogOpen(true)
+                      }}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDelete(rate.id)}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 {rate.sglRate && (
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Single:</span>
-                    <span className="font-semibold">NPR {rate.sglRate.toLocaleString()}</span>
+                    <span className="font-semibold">{currencySymbol(rate.currency)} {rate.sglRate.toLocaleString()}</span>
                   </div>
                 )}
                 {rate.dblRate && (
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Double:</span>
-                    <span className="font-semibold">NPR {rate.dblRate.toLocaleString()}</span>
+                    <span className="font-semibold">{currencySymbol(rate.currency)} {rate.dblRate.toLocaleString()}</span>
                   </div>
                 )}
                 {rate.trplRate && (
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Triple:</span>
-                    <span className="font-semibold">NPR {rate.trplRate.toLocaleString()}</span>
+                    <span className="font-semibold">{currencySymbol(rate.currency)} {rate.trplRate.toLocaleString()}</span>
                   </div>
                 )}
               </CardContent>
@@ -179,7 +195,7 @@ export default function RateCardManager({ businessId, businessName, roomTypes }:
             <DialogTitle>Add Rate Card</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <Label>Room Type *</Label>
                 <select
@@ -208,11 +224,24 @@ export default function RateCardManager({ businessId, businessName, roomTypes }:
                   ))}
                 </select>
               </div>
+
+              <div>
+                <Label>Currency *</Label>
+                <select
+                  value={formData.currency}
+                  onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-md"
+                >
+                  {CURRENCIES.map((item) => (
+                    <option key={item.value} value={item.value}>{item.label}</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
-                <Label>Single Rate (NPR)</Label>
+                <Label>Single Rate</Label>
                 <Input
                   type="number"
                   step="0.01"
@@ -223,7 +252,7 @@ export default function RateCardManager({ businessId, businessName, roomTypes }:
               </div>
 
               <div>
-                <Label>Double Rate (NPR)</Label>
+                <Label>Double Rate</Label>
                 <Input
                   type="number"
                   step="0.01"
@@ -234,7 +263,7 @@ export default function RateCardManager({ businessId, businessName, roomTypes }:
               </div>
 
               <div>
-                <Label>Triple Rate (NPR)</Label>
+                <Label>Triple Rate</Label>
                 <Input
                   type="number"
                   step="0.01"

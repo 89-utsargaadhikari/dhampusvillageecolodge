@@ -13,6 +13,8 @@ interface InventoryItem {
   name: string
   unit: string
   currentStock: number
+  storeStock?: number
+  barStock?: number
   goodStockLevel: number
   lowStockLevel: number
   criticalStockLevel: number
@@ -26,8 +28,14 @@ interface InventoryUpdateModalProps {
 export default function InventoryUpdateModal({ item, onClose }: InventoryUpdateModalProps) {
   const [customAmount, setCustomAmount] = useState<string>("")
   const [transactionType, setTransactionType] = useState<string>("purchase")
+  const [location, setLocation] = useState<"store" | "bar">("store")
   const [notes, setNotes] = useState<string>("")
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string>("")
+
+  const storeStock = item.storeStock ?? 0
+  const barStock = item.barStock ?? 0
+  const locationStock = location === "bar" ? barStock : storeStock
 
   const handleQuickUpdate = async (amount: number) => {
     await updateStock(amount)
@@ -36,14 +44,15 @@ export default function InventoryUpdateModal({ item, onClose }: InventoryUpdateM
   const handleCustomUpdate = async () => {
     const amount = parseFloat(customAmount)
     if (isNaN(amount) || amount === 0) {
-      alert("Please enter a valid amount")
+      setError("Please enter a valid amount")
       return
     }
-    await updateStock(amount)
+    await updateStock(reducesStock && amount > 0 ? -amount : amount)
   }
 
   const updateStock = async (changeAmount: number) => {
     setLoading(true)
+    setError("")
     try {
       const response = await fetch(`/api/inventory/${item.id}/update-stock`, {
         method: "POST",
@@ -51,40 +60,40 @@ export default function InventoryUpdateModal({ item, onClose }: InventoryUpdateM
         body: JSON.stringify({
           changeAmount,
           transactionType,
+          location,
           notes: notes.trim() || undefined
         })
       })
 
+      const data = await response.json().catch(() => ({}))
       if (response.ok) {
         onClose()
       } else {
-        const data = await response.json()
-        alert(`Error: ${data.error || "Failed to update stock"}`)
+        setError(data.error || "Failed to update stock")
       }
-    } catch (error) {
-      console.error("Failed to update stock:", error)
-      alert("Failed to update stock")
+    } catch (err) {
+      console.error("Failed to update stock:", err)
+      setError("Failed to update stock")
     } finally {
       setLoading(false)
     }
   }
 
-  const getStockStatus = () => {
-    if (item.currentStock <= item.criticalStockLevel) {
+  const getStockStatus = (qty: number) => {
+    if (qty <= item.criticalStockLevel) {
       return { color: "text-red-600", icon: "🔴", label: "Critical" }
-    } else if (item.currentStock <= item.lowStockLevel) {
+    } else if (qty <= item.lowStockLevel) {
       return { color: "text-orange-600", icon: "🟠", label: "Low Stock" }
-    } else {
-      return { color: "text-green-600", icon: "🟢", label: "Good" }
     }
+    return { color: "text-green-600", icon: "🟢", label: "Good" }
   }
 
-  const status = getStockStatus()
+  const status = getStockStatus(item.currentStock)
+  const reducesStock = transactionType === "usage" || transactionType === "waste"
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full">
-        {/* Header */}
+      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
         <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-4 flex items-center justify-between rounded-t-lg">
           <div>
             <h2 className="text-xl font-bold">Update Stock</h2>
@@ -98,9 +107,7 @@ export default function InventoryUpdateModal({ item, onClose }: InventoryUpdateM
           </button>
         </div>
 
-        {/* Content */}
         <div className="p-6 space-y-6">
-          {/* Current Stock Display */}
           <div className="bg-gray-50 p-4 rounded-lg border-2">
             <p className="text-sm text-gray-600 mb-1">Current Stock</p>
             <div className="flex items-center justify-between">
@@ -112,13 +119,32 @@ export default function InventoryUpdateModal({ item, onClose }: InventoryUpdateM
                   {status.icon} {status.label}
                 </p>
                 <p className="text-xs text-gray-600">
-                  Good: ≥{item.goodStockLevel} | Low: ≤{item.lowStockLevel} | Critical: ≤{item.criticalStockLevel}
+                  Store: {storeStock} · Bar: {barStock}
                 </p>
               </div>
             </div>
           </div>
 
-          {/* Quick Buttons */}
+          <div>
+            <Label className="mb-3 block">Update which location?</Label>
+            <RadioGroup value={location} onValueChange={(value) => setLocation(value as "store" | "bar")}>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-gray-50">
+                  <RadioGroupItem value="store" id="store" />
+                  <Label htmlFor="store" className="cursor-pointer flex-1">
+                    Store ({storeStock} {item.unit})
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-gray-50">
+                  <RadioGroupItem value="bar" id="bar" />
+                  <Label htmlFor="bar" className="cursor-pointer flex-1">
+                    Bar ({barStock} {item.unit})
+                  </Label>
+                </div>
+              </div>
+            </RadioGroup>
+          </div>
+
           <div>
             <Label className="mb-3 block">Quick Actions</Label>
             <div className="grid grid-cols-3 gap-2 mb-2">
@@ -126,7 +152,7 @@ export default function InventoryUpdateModal({ item, onClose }: InventoryUpdateM
                 type="button"
                 variant="outline"
                 onClick={() => handleQuickUpdate(-10)}
-                disabled={loading || item.currentStock < 10}
+                disabled={loading || locationStock < 10}
                 className="flex items-center justify-center gap-1"
               >
                 <Minus className="w-4 h-4" />
@@ -136,7 +162,7 @@ export default function InventoryUpdateModal({ item, onClose }: InventoryUpdateM
                 type="button"
                 variant="outline"
                 onClick={() => handleQuickUpdate(-5)}
-                disabled={loading || item.currentStock < 5}
+                disabled={loading || locationStock < 5}
                 className="flex items-center justify-center gap-1"
               >
                 <Minus className="w-4 h-4" />
@@ -146,7 +172,7 @@ export default function InventoryUpdateModal({ item, onClose }: InventoryUpdateM
                 type="button"
                 variant="outline"
                 onClick={() => handleQuickUpdate(-1)}
-                disabled={loading || item.currentStock < 1}
+                disabled={loading || locationStock < 1}
                 className="flex items-center justify-center gap-1"
               >
                 <Minus className="w-4 h-4" />
@@ -187,7 +213,6 @@ export default function InventoryUpdateModal({ item, onClose }: InventoryUpdateM
             </div>
           </div>
 
-          {/* Custom Amount */}
           <div>
             <Label htmlFor="customAmount">Or Enter Custom Amount</Label>
             <div className="flex gap-2 mt-2">
@@ -195,11 +220,12 @@ export default function InventoryUpdateModal({ item, onClose }: InventoryUpdateM
                 id="customAmount"
                 type="number"
                 step="0.01"
-                placeholder={`Enter amount in ${item.unit}`}
+                placeholder={`Amount in ${item.unit}`}
                 value={customAmount}
                 onChange={(e) => setCustomAmount(e.target.value)}
-                onKeyPress={(e) => {
+                onKeyDown={(e) => {
                   if (e.key === "Enter") {
+                    e.preventDefault()
                     handleCustomUpdate()
                   }
                 }}
@@ -209,15 +235,16 @@ export default function InventoryUpdateModal({ item, onClose }: InventoryUpdateM
                 disabled={loading || !customAmount}
                 className="bg-blue-600 hover:bg-blue-700"
               >
-                Update
+                {loading ? "Saving..." : "Update"}
               </Button>
             </div>
             <p className="text-xs text-gray-600 mt-1">
-              Use positive numbers to add stock, negative to reduce (e.g., -5.5)
+              {reducesStock
+                ? "Enter a positive number to take stock out (e.g. 2 bottles used)."
+                : "Positive numbers add stock. Use a minus to reduce on Adjustment."}
             </p>
           </div>
 
-          {/* Transaction Type */}
           <div>
             <Label className="mb-3 block">Reason for Update</Label>
             <RadioGroup value={transactionType} onValueChange={setTransactionType}>
@@ -250,7 +277,6 @@ export default function InventoryUpdateModal({ item, onClose }: InventoryUpdateM
             </RadioGroup>
           </div>
 
-          {/* Notes */}
           <div>
             <Label htmlFor="notes">Notes (Optional)</Label>
             <Textarea
@@ -262,7 +288,10 @@ export default function InventoryUpdateModal({ item, onClose }: InventoryUpdateM
             />
           </div>
 
-          {/* Close Button */}
+          {error && (
+            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md p-2">{error}</p>
+          )}
+
           <Button
             type="button"
             variant="outline"

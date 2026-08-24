@@ -26,26 +26,35 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const businessId = parseInt(paramId)
     const body = await request.json()
     
+    const currency = body.currency || "NPR"
+    const parseRate = (value: unknown) => {
+      if (value === undefined || value === null || value === "") return null
+      const parsed = parseFloat(String(value))
+      return Number.isFinite(parsed) ? parsed : null
+    }
+
     const rateCard = await prisma.businessRateCard.upsert({
       where: {
-        businessId_roomType_mealPlan: {
+        businessId_roomType_mealPlan_currency: {
           businessId,
           roomType: body.roomType,
-          mealPlan: body.mealPlan
+          mealPlan: body.mealPlan,
+          currency
         }
       },
       create: {
         businessId,
         roomType: body.roomType,
         mealPlan: body.mealPlan,
-        sglRate: body.sglRate ? parseFloat(body.sglRate) : null,
-        dblRate: body.dblRate ? parseFloat(body.dblRate) : null,
-        trplRate: body.trplRate ? parseFloat(body.trplRate) : null
+        currency,
+        sglRate: parseRate(body.sglRate),
+        dblRate: parseRate(body.dblRate),
+        trplRate: parseRate(body.trplRate)
       },
       update: {
-        sglRate: body.sglRate ? parseFloat(body.sglRate) : null,
-        dblRate: body.dblRate ? parseFloat(body.dblRate) : null,
-        trplRate: body.trplRate ? parseFloat(body.trplRate) : null
+        sglRate: parseRate(body.sglRate),
+        dblRate: parseRate(body.dblRate),
+        trplRate: parseRate(body.trplRate)
       }
     })
     

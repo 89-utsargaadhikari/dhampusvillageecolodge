@@ -1,32 +1,31 @@
 import { NextRequest, NextResponse } from "next/server"
-import { PrismaClient } from "@prisma/client"
+import prisma from "@/lib/prisma"
+import { locationStocks } from "@/lib/inventory-units"
 
-const prisma = new PrismaClient()
-
-// GET - Fetch single inventory item
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id: paramId } = await params
+    const id = parseInt(paramId)
+
     const item = await prisma.inventoryItem.findUnique({
-      where: { id: parseInt(params.id) },
+      where: { id },
       include: {
+        menuItem: true,
         transactions: {
-          orderBy: { createdAt: 'desc' },
-          take: 10
-        }
-      }
+          orderBy: { createdAt: "desc" },
+          take: 10,
+        },
+      },
     })
 
     if (!item) {
-      return NextResponse.json(
-        { error: "Item not found" },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: "Item not found" }, { status: 404 })
     }
 
-    return NextResponse.json(item)
+    return NextResponse.json({ ...item, ...locationStocks(item) })
   } catch (error) {
     console.error("Failed to fetch inventory item:", error)
     return NextResponse.json(
@@ -36,15 +35,15 @@ export async function GET(
   }
 }
 
-// PUT - Update inventory item
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id: paramId } = await params
+    const id = parseInt(paramId)
     const data = await request.json()
 
-    // Validate stock levels if provided
     if (data.goodStockLevel && data.lowStockLevel && data.goodStockLevel <= data.lowStockLevel) {
       return NextResponse.json(
         { error: "Good stock level must be higher than low stock level" },
@@ -59,22 +58,49 @@ export async function PUT(
       )
     }
 
+    const existing = await prisma.inventoryItem.findUnique({ where: { id } })
+    if (!existing) {
+      return NextResponse.json({ error: "Item not found" }, { status: 404 })
+    }
+
+    const storeStock =
+      data.storeStock !== undefined ? parseFloat(data.storeStock) : existing.storeStock
+    const barStock =
+      data.barStock !== undefined ? parseFloat(data.barStock) : existing.barStock
+
     const item = await prisma.inventoryItem.update({
-      where: { id: parseInt(params.id) },
+      where: { id },
       data: {
         name: data.name,
         category: data.category,
         unit: data.unit,
-        currentStock: data.currentStock !== undefined ? parseFloat(data.currentStock) : undefined,
-        goodStockLevel: data.goodStockLevel !== undefined ? parseFloat(data.goodStockLevel) : undefined,
-        lowStockLevel: data.lowStockLevel !== undefined ? parseFloat(data.lowStockLevel) : undefined,
-        criticalStockLevel: data.criticalStockLevel !== undefined ? parseFloat(data.criticalStockLevel) : undefined,
+        storeStock,
+        barStock,
+        currentStock: (storeStock || 0) + (barStock || 0),
+        goodStockLevel:
+          data.goodStockLevel !== undefined ? parseFloat(data.goodStockLevel) : undefined,
+        lowStockLevel:
+          data.lowStockLevel !== undefined ? parseFloat(data.lowStockLevel) : undefined,
+        criticalStockLevel:
+          data.criticalStockLevel !== undefined ? parseFloat(data.criticalStockLevel) : undefined,
         unitPrice: data.unitPrice !== undefined ? parseFloat(data.unitPrice) : undefined,
         storageLocation: data.storageLocation !== undefined ? data.storageLocation : undefined,
         trackExpiry: data.trackExpiry !== undefined ? data.trackExpiry : undefined,
-        expiryDate: data.expiryDate !== undefined ? (data.expiryDate ? new Date(data.expiryDate) : null) : undefined,
-        expiryAlertDays: data.expiryAlertDays !== undefined ? parseInt(data.expiryAlertDays) : undefined
-      }
+        expiryDate:
+          data.expiryDate !== undefined
+            ? data.expiryDate
+              ? new Date(data.expiryDate)
+              : null
+            : undefined,
+        expiryAlertDays:
+          data.expiryAlertDays !== undefined ? parseInt(data.expiryAlertDays) : undefined,
+        menuItemId:
+          data.menuItemId !== undefined
+            ? data.menuItemId
+              ? parseInt(data.menuItemId)
+              : null
+            : undefined,
+      },
     })
 
     return NextResponse.json(item)
@@ -82,15 +108,12 @@ export async function PUT(
     console.error("Failed to update inventory item:", error)
 
     if (error.code === "P2025") {
-      return NextResponse.json(
-        { error: "Item not found" },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: "Item not found" }, { status: 404 })
     }
 
     if (error.code === "P2002") {
       return NextResponse.json(
-        { error: "An item with this name already exists" },
+        { error: "An item with this name already exists, or this menu item is already linked" },
         { status: 400 }
       )
     }
@@ -102,14 +125,16 @@ export async function PUT(
   }
 }
 
-// DELETE - Delete inventory item
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id: paramId } = await params
+    const id = parseInt(paramId)
+
     await prisma.inventoryItem.delete({
-      where: { id: parseInt(params.id) }
+      where: { id },
     })
 
     return NextResponse.json({ message: "Item deleted successfully" })
@@ -117,10 +142,7 @@ export async function DELETE(
     console.error("Failed to delete inventory item:", error)
 
     if (error.code === "P2025") {
-      return NextResponse.json(
-        { error: "Item not found" },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: "Item not found" }, { status: 404 })
     }
 
     return NextResponse.json(

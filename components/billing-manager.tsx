@@ -10,6 +10,8 @@ import {
   createCreditAccount
 } from "@/lib/api"
 import { addNotification } from "@/lib/notifications"
+import { calculateInclusiveVat } from "@/lib/vat"
+import { mealPlanLabel } from "@/lib/hotel"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -26,6 +28,8 @@ interface Bill {
   subtotal: number
   serviceTax: number
   vat: number
+  exclusiveAmount: number
+  discountAmount: number
   totalAmount: number
 }
 
@@ -40,6 +44,8 @@ export default function BillingManager() {
   const [roomPaymentMethod, setRoomPaymentMethod] = useState<string>("cash")
   const [restaurantPaymentStatus, setRestaurantPaymentStatus] = useState<string>("paid")
   const [restaurantPaymentMethod, setRestaurantPaymentMethod] = useState<string>("cash")
+  const [checkoutDiscountType, setCheckoutDiscountType] = useState<"percentage" | "amount">("amount")
+  const [checkoutDiscountValue, setCheckoutDiscountValue] = useState(0)
 
   useEffect(() => {
     loadData()
@@ -97,15 +103,13 @@ export default function BillingManager() {
     console.log(`🍽️ Orders for ${booking.guest} (Room ${booking.roomNumber}):`, roomOrders.length, "orders found")
 
     const restaurantTotal = roomOrders.reduce((sum, order) => sum + order.total, 0)
-
-    // Calculate subtotal
-    const subtotal = roomCharges + restaurantTotal
-
-    // Calculate taxes (Nepal rates)
-    const serviceTax = subtotal * 0.10 // 10% service charge
-    const vat = (subtotal + serviceTax) * 0.13 // 13% VAT
-
-    const totalAmount = subtotal + serviceTax + vat
+    const inclusiveSubtotal = roomCharges + restaurantTotal
+    const totals = calculateInclusiveVat({
+      inclusiveSubtotal,
+      vatPercent: 13,
+      discountType: checkoutDiscountType,
+      discountValue: checkoutDiscountValue
+    })
 
     const bill: Bill = {
       booking,
@@ -113,10 +117,12 @@ export default function BillingManager() {
       numberOfNights: nights,
       restaurantOrders: roomOrders,
       restaurantTotal,
-      subtotal,
-      serviceTax,
-      vat,
-      totalAmount
+      subtotal: inclusiveSubtotal,
+      serviceTax: 0,
+      vat: totals.vatAmount,
+      exclusiveAmount: totals.discountedExclusive,
+      discountAmount: totals.discountAmount,
+      totalAmount: totals.total
     }
 
     // Reset payment states to defaults
@@ -145,8 +151,10 @@ export default function BillingManager() {
       restaurantOrders: [order],
       restaurantTotal: order.total,
       subtotal: order.total,
-      serviceTax: 0,  // Already included in order total
-      vat: 0,  // Already included in order total
+      serviceTax: 0,
+      vat: 0,
+      exclusiveAmount: order.total,
+      discountAmount: 0,
       totalAmount: order.total
     }
 
@@ -173,6 +181,8 @@ Invoice / Bill
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Guest Name: ${selectedBill.booking.guest}
+Company: ${selectedBill.booking.business?.name || "N/A"}
+Meal Plan: ${mealPlanLabel(selectedBill.booking.bookingType)}
 Room Number: ${selectedBill.booking.roomNumber}
 Check-in: ${selectedBill.booking.checkin}
 Check-out: ${selectedBill.booking.checkout}
@@ -196,9 +206,10 @@ Total Restaurant: NPR ${selectedBill.restaurantTotal.toFixed(2)}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Subtotal: NPR ${selectedBill.subtotal.toFixed(2)}
-Service Charge (10%): NPR ${selectedBill.serviceTax.toFixed(2)}
-VAT (13%): NPR ${selectedBill.vat.toFixed(2)}
+Inclusive Subtotal: NPR ${selectedBill.subtotal.toFixed(2)}
+Discount: NPR ${selectedBill.discountAmount.toFixed(2)}
+VAT exclusive: NPR ${selectedBill.exclusiveAmount.toFixed(2)}
+VAT (13% inclusive): NPR ${selectedBill.vat.toFixed(2)}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TOTAL AMOUNT: NPR ${selectedBill.totalAmount.toFixed(2)}
@@ -459,8 +470,8 @@ Thank you for staying with us!
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">Billing & Checkout</h2>
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+        <h2 className="text-xl sm:text-2xl font-bold">Billing & Checkout</h2>
       </div>
 
       <Card>
@@ -526,7 +537,7 @@ Thank you for staying with us!
                             </p>
                             <p className="text-xs text-gray-500">(incl. taxes)</p>
                           </div>
-                          <Button onClick={() => generateBill(booking)} className="w-full">
+                          <Button onClick={() => { setCheckoutDiscountType("amount"); setCheckoutDiscountValue(0); generateBill(booking) }} className="w-full">
                             <Receipt className="w-4 h-4 mr-2" />
                             Generate Bill
                           </Button>
@@ -627,6 +638,8 @@ Thank you for staying with us!
                     <p><span className="text-gray-600">Name:</span> <span className="font-medium">{selectedBill.booking.guest}</span></p>
                     <p><span className="text-gray-600">Email:</span> {selectedBill.booking.email || 'N/A'}</p>
                     <p><span className="text-gray-600">Phone:</span> {selectedBill.booking.phone || 'N/A'}</p>
+                    <p><span className="text-gray-600">Company:</span> {selectedBill.booking.business?.name || 'N/A'}</p>
+                    <p><span className="text-gray-600">Meal plan:</span> {mealPlanLabel(selectedBill.booking.bookingType)}</p>
                     <p><span className="text-gray-600">Room:</span> <span className="font-medium">{selectedBill.booking.roomNumber}</span></p>
                   </div>
                 </div>
@@ -686,17 +699,58 @@ Thank you for staying with us!
               )}
 
               {/* Total Calculation */}
+              <div className="border rounded-lg p-4 space-y-3 print:hidden">
+                <h3 className="font-semibold">Checkout discount / VAT</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Discount type</Label>
+                    <Select value={checkoutDiscountType} onValueChange={(value: "percentage" | "amount") => setCheckoutDiscountType(value)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="percentage">Percentage</SelectItem>
+                        <SelectItem value="amount">Amount</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Discount value</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={checkoutDiscountValue}
+                      onChange={(e) => setCheckoutDiscountValue(parseFloat(e.target.value) || 0)}
+                    />
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => selectedBill.booking.status === "Walk-in" ? generateWalkInBill(selectedBill.restaurantOrders[0]) : generateBill(selectedBill.booking)}
+                >
+                  Recalculate bill
+                </Button>
+              </div>
+
               <div className="border-t-2 pt-4 space-y-2">
                 <div className="flex justify-between text-lg">
-                  <span>Subtotal</span>
+                  <span>Inclusive subtotal</span>
                   <span className="font-semibold">NPR {selectedBill.subtotal.toFixed(2)}</span>
                 </div>
+                {selectedBill.discountAmount > 0 && (
+                  <div className="flex justify-between text-sm text-green-700">
+                    <span>Discount (on exclusive)</span>
+                    <span>- NPR {selectedBill.discountAmount.toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-sm text-gray-600">
-                  <span>Service Charge (10%)</span>
-                  <span>NPR {selectedBill.serviceTax.toFixed(2)}</span>
+                  <span>VAT exclusive amount</span>
+                  <span>NPR {selectedBill.exclusiveAmount.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-sm text-gray-600">
-                  <span>VAT (13%)</span>
+                  <span>VAT (13% inclusive)</span>
                   <span>NPR {selectedBill.vat.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-2xl font-bold text-primary border-t-2 pt-3 mt-3">
@@ -744,8 +798,8 @@ Thank you for staying with us!
             {selectedBill && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <p className="text-sm text-gray-600">Total Amount</p>
-                <p className="text-3xl font-bold text-primary">NPR {selectedBill.totalAmount.toFixed(2)}</p>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-2xl sm:text-3xl font-bold text-primary break-words">NPR {selectedBill.totalAmount.toFixed(2)}</p>
+                <p className="text-xs text-gray-500 mt-1 break-words">
                   Room: NPR {selectedBill.roomCharges.toFixed(2)} + Restaurant: NPR {selectedBill.restaurantTotal.toFixed(2)} + Taxes: NPR {(selectedBill.serviceTax + selectedBill.vat).toFixed(2)}
                 </p>
               </div>
@@ -753,7 +807,7 @@ Thank you for staying with us!
 
             {/* Room Payment */}
             <div className="border border-gray-200 rounded-lg p-4 space-y-3">
-              <div className="flex justify-between items-center">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1">
                 <h4 className="font-semibold">🏨 Room Charges</h4>
                 <p className="text-lg font-bold">NPR {selectedBill?.roomCharges.toFixed(2)}</p>
               </div>
@@ -794,7 +848,7 @@ Thank you for staying with us!
             {/* Restaurant Payment */}
             {selectedBill && selectedBill.restaurantTotal > 0 && (
               <div className="border border-gray-200 rounded-lg p-4 space-y-3">
-                <div className="flex justify-between items-center">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1">
                   <h4 className="font-semibold">🍽️ Restaurant & Bar</h4>
                   <p className="text-lg font-bold">NPR {selectedBill.restaurantTotal.toFixed(2)}</p>
                 </div>

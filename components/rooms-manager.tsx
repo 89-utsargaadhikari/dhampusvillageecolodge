@@ -142,7 +142,7 @@ export default function RoomsManager() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <h2 className="text-2xl font-bold text-gray-900">Rooms Management</h2>
         <Button onClick={() => handleOpenDialog()} className="flex items-center gap-2">
           <Plus size={20} />

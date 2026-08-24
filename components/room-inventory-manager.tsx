@@ -129,12 +129,12 @@ export default function RoomInventoryManager() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Room Inventory</h2>
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Room Inventory</h2>
           <p className="text-sm text-gray-600">Manage individual room numbers and their assignments</p>
         </div>
-        <Button onClick={() => handleOpenDialog()} className="flex items-center gap-2">
+        <Button onClick={() => handleOpenDialog()} className="flex items-center justify-center gap-2 w-full sm:w-auto">
           <Plus size={20} />
           Add Room Number
         </Button>

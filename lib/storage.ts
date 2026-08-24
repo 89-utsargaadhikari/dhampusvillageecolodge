@@ -20,12 +20,20 @@ export interface Booking {
   email?: string
   phone?: string
   room: string
-  roomNumber?: string // Allocated room number
+  roomNumber?: string
   checkin: string
   checkout: string
   price: string
-  status: "Confirmed" | "Pending" | "Cancelled" | "Checked Out"
-  bookingSource?: "website" | "phone" | "walkin" // Track where booking came from
+  status: "Confirmed" | "Pending" | "Cancelled" | "Checked In" | "Checked Out"
+  bookingSource?: "website" | "phone" | "walkin" | "travel_agent" | "company" | "business"
+  businessId?: number | null
+  business?: { id: number; name: string } | null
+  numberOfGuests?: number
+  bookingType?: string
+  occupancy?: string | null
+  currency?: string
+  extraBed?: boolean
+  groupId?: string | null
 }
 
 export interface GalleryItem {

@@ -353,7 +353,7 @@ export default function RoomStatusDashboard() {
       {/* Date Display Banner */}
       <Card className={isToday ? "bg-green-50 border-green-300" : "bg-blue-50 border-blue-300"}>
         <CardContent className="py-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex items-center gap-3">
               <Calendar className={`w-5 h-5 ${isToday ? "text-green-600" : "text-blue-600"}`} />
               <div>

@@ -15,6 +15,8 @@ interface InventoryItem {
   category: string
   unit: string
   currentStock: number
+  storeStock?: number
+  barStock?: number
   goodStockLevel: number
   lowStockLevel: number
   criticalStockLevel: number
@@ -23,6 +25,8 @@ interface InventoryItem {
   trackExpiry: boolean
   expiryDate?: string
   expiryAlertDays?: number
+  menuItemId?: number | null
+  menuItem?: { id: number; name: string } | null
   createdAt: string
   updatedAt: string
 }
@@ -47,6 +51,7 @@ export default function InventoryManager() {
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null)
   const [updatingItem, setUpdatingItem] = useState<InventoryItem | null>(null)
   const [loading, setLoading] = useState(true)
+  const [transferQty, setTransferQty] = useState<Record<number, string>>({})
 
   useEffect(() => {
     fetchItems()
@@ -132,6 +137,31 @@ export default function InventoryManager() {
     fetchItems()
   }
 
+  const handleTransfer = async (item: InventoryItem) => {
+    const quantity = parseFloat(transferQty[item.id] || "0")
+    if (!quantity || quantity <= 0) {
+      alert("Enter how many units to move from store to bar")
+      return
+    }
+    try {
+      const response = await fetch("/api/inventory/transfer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId: item.id, quantity })
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        alert(data.error || "Transfer failed")
+        return
+      }
+      setTransferQty({ ...transferQty, [item.id]: "" })
+      fetchItems()
+    } catch (error) {
+      console.error("Failed to transfer stock:", error)
+      alert("Failed to transfer stock")
+    }
+  }
+
   const handleDelete = async (id: number) => {
     if (!confirm("Are you sure you want to delete this item?")) return
 
@@ -161,10 +191,10 @@ export default function InventoryManager() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h2 className="text-3xl font-bold">Inventory Management</h2>
-          <p className="text-gray-600 mt-1">Track stock levels and manage inventory items</p>
+          <h2 className="text-2xl sm:text-3xl font-bold">Inventory Management</h2>
+          <p className="text-gray-600 mt-1">Track store and bar stock separately</p>
         </div>
         <Button
           onClick={() => {
@@ -179,7 +209,7 @@ export default function InventoryManager() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
@@ -232,10 +262,10 @@ export default function InventoryManager() {
       {/* Filter */}
       <Card>
         <CardContent className="pt-6">
-          <div className="flex items-center gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <label className="text-sm font-medium">Filter by Category:</label>
             <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-              <SelectTrigger className="w-64">
+              <SelectTrigger className="w-full sm:w-64">
                 <SelectValue placeholder="All Categories" />
               </SelectTrigger>
               <SelectContent>
@@ -283,7 +313,7 @@ export default function InventoryManager() {
             return (
               <Card key={item.id} className="hover:shadow-md transition-shadow">
                 <CardContent className="pt-6">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
                         <span className="text-2xl">{stockStatus.icon}</span>
@@ -291,6 +321,9 @@ export default function InventoryManager() {
                           <h3 className="text-lg font-semibold">{item.name}</h3>
                           <div className="flex items-center gap-2 text-sm text-gray-600">
                             <Badge variant="outline">{item.category}</Badge>
+                            {item.menuItem && (
+                              <Badge className="bg-emerald-600 text-white">RMS: {item.menuItem.name}</Badge>
+                            )}
                             {item.storageLocation && (
                               <span className="text-xs">📍 {item.storageLocation}</span>
                             )}
@@ -300,9 +333,9 @@ export default function InventoryManager() {
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                         <div>
-                          <p className="text-sm text-gray-600 mb-1">Current Stock</p>
-                          <p className="text-2xl font-bold">
-                            {item.currentStock} <span className="text-sm font-normal text-gray-600">{item.unit}</span>
+                          <p className="text-sm text-gray-600 mb-1">Store / Bar / Total</p>
+                          <p className="text-lg sm:text-2xl font-bold">
+                            {item.storeStock ?? 0} / {item.barStock ?? 0} / {item.currentStock} <span className="text-sm font-normal text-gray-600">{item.unit}</span>
                           </p>
                           <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
                             <div
@@ -342,7 +375,21 @@ export default function InventoryManager() {
                       </div>
                     </div>
 
-                    <div className="flex flex-col gap-2 ml-4">
+                    <div className="flex flex-col gap-2 lg:ml-4 w-full lg:w-auto">
+                      <div className="flex gap-2">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="Qty"
+                          value={transferQty[item.id] || ""}
+                          onChange={(e) => setTransferQty({ ...transferQty, [item.id]: e.target.value })}
+                          className="w-24 rounded-md border px-2 text-sm"
+                        />
+                        <Button variant="outline" onClick={() => handleTransfer(item)}>
+                          Store → Bar
+                        </Button>
+                      </div>
                       <Button
                         onClick={() => handleUpdate(item)}
                         className="bg-blue-600 hover:bg-blue-700"

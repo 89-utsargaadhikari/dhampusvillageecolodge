@@ -34,7 +34,7 @@ export default function Rooms() {
   }
 
   return (
-    <section id="rooms" className="py-24 md:py-32 bg-gradient-to-br from-green-50 via-yellow-50 to-green-50 relative overflow-hidden">
+    <section id="rooms" className="scroll-mt-28 py-24 md:py-32 bg-gradient-to-br from-green-50 via-yellow-50 to-green-50 relative overflow-hidden">
       {/* Decorative Background Elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-20">
         <div className="absolute top-20 left-10 w-72 h-72 bg-green-300 rounded-full blur-3xl" />
@@ -42,16 +42,16 @@ export default function Rooms() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-        <div className="text-center mb-20 animate-in fade-in slide-in-from-top duration-700">
+        <div className="text-center mb-10 md:mb-20 animate-in fade-in slide-in-from-top duration-700">
           <div className="inline-block mb-4">
-            <span className="text-yellow-500 font-bold text-sm uppercase tracking-[0.3em] border-2 border-yellow-500/30 px-6 py-2 rounded-full bg-yellow-50">
+            <span className="text-yellow-500 font-bold text-xs sm:text-sm uppercase tracking-[0.15em] sm:tracking-[0.3em] border-2 border-yellow-500/30 px-4 sm:px-6 py-2 rounded-full bg-yellow-50">
               ✨ Accommodations ✨
             </span>
           </div>
-          <h2 className="font-display text-5xl md:text-6xl font-bold bg-gradient-to-r from-green-700 via-yellow-600 to-green-700 bg-clip-text text-transparent mb-6">
+          <h2 className="font-display text-3xl sm:text-5xl md:text-6xl font-bold bg-gradient-to-r from-green-700 via-yellow-600 to-green-700 bg-clip-text text-transparent mb-4 sm:mb-6">
             Exquisite Luxury Rooms
           </h2>
-          <p className="text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed">
+          <p className="text-base sm:text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed">
             Each room is a carefully designed sanctuary featuring premium furnishings, modern amenities, and
             unobstructed views of the Himalayan peaks
           </p>
@@ -77,7 +77,7 @@ export default function Rooms() {
               style={{ animationDelay: `${index * 150}ms` }}
             >
               {/* Image Container */}
-              <div className="relative overflow-hidden h-80 bg-gradient-to-br from-green-100 to-yellow-100">
+              <div className="relative overflow-hidden h-56 sm:h-80 bg-gradient-to-br from-green-100 to-yellow-100">
                 <img
                   src={room.image || "/placeholder.svg"}
                   alt={room.name}
@@ -121,15 +121,15 @@ export default function Rooms() {
                 </div>
 
                 {/* Footer */}
-                <div className="flex items-center justify-between pt-6 border-t-2 border-green-100">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-6 border-t-2 border-green-100">
                   <div>
                     <p className="text-xs text-gray-500 mb-1">Starting from</p>
-                    <p className="font-display text-3xl font-bold bg-gradient-to-r from-green-600 to-yellow-600 bg-clip-text text-transparent">
+                    <p className="font-display text-2xl sm:text-3xl font-bold bg-gradient-to-r from-green-600 to-yellow-600 bg-clip-text text-transparent">
                       ${room.price}
                     </p>
                     <p className="text-xs text-gray-500">per night</p>
                   </div>
-                  <Link href="/booking" className="bg-gradient-to-r from-green-600 to-yellow-600 hover:from-green-700 hover:to-yellow-700 text-white px-6 py-3 rounded-full text-sm font-bold transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-110">
+                  <Link href="/booking" className="bg-gradient-to-r from-green-600 to-yellow-600 hover:from-green-700 hover:to-yellow-700 text-white px-6 py-3 rounded-full text-sm font-bold transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 text-center w-full sm:w-auto">
                     Book Now
                   </Link>
                 </div>

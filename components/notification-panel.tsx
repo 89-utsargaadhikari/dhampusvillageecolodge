@@ -115,7 +115,7 @@ export default function NotificationPanel({ onNotificationClick }: NotificationP
           />
 
           {/* Panel */}
-          <div className="absolute right-0 top-12 w-80 sm:w-96 max-h-[600px] bg-white rounded-lg shadow-2xl border border-gray-200 z-50 overflow-hidden">
+          <div className="fixed inset-x-3 top-16 sm:absolute sm:inset-x-auto sm:right-0 sm:top-12 w-auto sm:w-96 max-h-[min(600px,80vh)] bg-white rounded-lg shadow-2xl border border-gray-200 z-50 overflow-hidden">
             {/* Header */}
             <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
               <div>

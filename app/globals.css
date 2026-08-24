@@ -181,3 +181,32 @@ a,
 button {
   @apply transition-all duration-300;
 }
+
+/* Frosted glass used by the scrolled public header */
+.nav-glass-bar {
+  background: rgba(248, 247, 244, 0.7);
+  border-bottom-color: rgba(228, 184, 74, 0.22);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+}
+
+.nav-glass-pill {
+  background: rgba(248, 247, 244, 0.78);
+  border-color: rgba(228, 184, 74, 0.28);
+  box-shadow:
+    0 10px 36px rgba(26, 20, 8, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(24px) saturate(165%);
+  -webkit-backdrop-filter: blur(24px) saturate(165%);
+}
+
+.nav-glass-menu {
+  background: rgba(248, 247, 244, 0.82);
+  border-color: rgba(255, 255, 255, 0.75);
+  box-shadow:
+    0 12px 36px rgba(26, 20, 8, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(24px) saturate(165%);
+  -webkit-backdrop-filter: blur(24px) saturate(165%);
+}

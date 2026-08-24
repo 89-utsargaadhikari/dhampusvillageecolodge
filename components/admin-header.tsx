@@ -45,7 +45,7 @@ export default function AdminHeader({ onMenuClick, onTabChange }: AdminHeaderPro
   }
 
   return (
-    <header className="bg-white border-b border-gray-200 h-16 flex items-center justify-between px-3 sm:px-4 md:px-6">
+    <header className="bg-white border-b border-gray-200 h-16 flex items-center justify-between px-3 sm:px-4 md:px-6 min-w-0 shrink-0">
       <div className="flex items-center gap-3">
         <button onClick={onMenuClick} className="text-gray-600 hover:text-primary">
           <Menu size={24} />

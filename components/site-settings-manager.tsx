@@ -60,9 +60,9 @@ export default function SiteSettingsManager() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-gray-900">Site Settings</h2>
-        <Button onClick={handleSave} className="flex items-center gap-2">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+        <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Site Settings</h2>
+        <Button onClick={handleSave} className="flex items-center justify-center gap-2 w-full sm:w-auto">
           <Save size={20} />
           {isSaved ? "Saved!" : "Save Changes"}
         </Button>
