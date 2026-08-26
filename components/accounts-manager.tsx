@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AdminSearch, matchesSearch } from "@/components/admin-search"
+import { AdminLoading, AdminRefreshHint, useAdminLoader } from "@/components/admin-loading"
 // Credit management now fully database-driven
 import { addNotification } from "@/lib/notifications"
 import { 
@@ -63,6 +64,7 @@ export default function AccountsManager() {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth())
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
   const [searchQuery, setSearchQuery] = useState("")
+  const { loading, refreshing, run } = useAdminLoader()
 
   useEffect(() => {
     loadData()
@@ -86,12 +88,14 @@ export default function AccountsManager() {
   
   const loadData = async () => {
     try {
-      const [transactionsData, creditsData] = await Promise.all([
-        fetchAccountTransactions(),
-        fetchCreditAccounts()
-      ])
-      setTransactions(transactionsData)
-      setCreditAccounts(creditsData)
+      await run(async () => {
+        const [transactionsData, creditsData] = await Promise.all([
+          fetchAccountTransactions(),
+          fetchCreditAccounts()
+        ])
+        setTransactions(transactionsData)
+        setCreditAccounts(creditsData)
+      })
     } catch (error) {
       console.error('Failed to load data:', error)
     }
@@ -219,10 +223,15 @@ export default function AccountsManager() {
   
   const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
 
+  if (loading) return <AdminLoading label="Loading accounts..." />
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
-        <h2 className="text-xl sm:text-2xl font-bold">Account Management System (AMS)</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-xl sm:text-2xl font-bold">Account Management System (AMS)</h2>
+          <AdminRefreshHint show={refreshing} />
+        </div>
         <div className="flex flex-wrap gap-2">
           {activeTab === "transactions" && (
             <>

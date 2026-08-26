@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { AdminLoading, useAdminLoader } from "@/components/admin-loading"
 
 interface Payment {
   id: number
@@ -43,6 +44,7 @@ export default function PaymentDashboard() {
     credit: 0,
   })
   const [loading, setLoading] = useState(false)
+  const { loading: pageLoading, run } = useAdminLoader()
   const [filterMethod, setFilterMethod] = useState<string>("all")
   const [filterDate, setFilterDate] = useState<string>("")
   const [newPayment, setNewPayment] = useState({
@@ -60,10 +62,12 @@ export default function PaymentDashboard() {
 
   const fetchPayments = async () => {
     try {
-      const response = await fetch("/api/accounts/transactions")
-      const data = await response.json()
-      setPayments(data)
-      calculateStats(data)
+      await run(async () => {
+        const response = await fetch("/api/accounts/transactions")
+        const data = await response.json()
+        setPayments(data)
+        calculateStats(data)
+      })
     } catch (error) {
       console.error("Failed to fetch payments:", error)
     }
@@ -182,6 +186,8 @@ export default function PaymentDashboard() {
     { id: "bank_transfer", name: "Bank Transfer", icon: Building, color: "from-yellow-500 to-yellow-600" },
     { id: "credit", name: "Credit", icon: TrendingUp, color: "from-red-500 to-red-600" },
   ]
+
+  if (pageLoading) return <AdminLoading label="Loading payments..." />
 
   return (
     <div className="space-y-6">

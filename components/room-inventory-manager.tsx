@@ -19,12 +19,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { canonicalizeRoomTypeName, isCatalogRoomType } from "@/lib/hotel"
 import RoomTypeCombobox from "@/components/room-type-combobox"
 import { AdminSearch, matchesSearch } from "@/components/admin-search"
+import { AdminLoading, useAdminLoader } from "@/components/admin-loading"
 
 export default function RoomInventoryManager() {
   const [roomTypes, setRoomTypes] = useState<Room[]>([])
   const [inventory, setInventory] = useState<RoomInventoryItem[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
+  const { loading, run } = useAdminLoader()
   const [editingItem, setEditingItem] = useState<RoomInventoryItem | null>(null)
   const [formData, setFormData] = useState({
     roomNumber: "",
@@ -40,12 +42,14 @@ export default function RoomInventoryManager() {
   
   const loadData = async () => {
     try {
-      const [roomsData, inventoryData] = await Promise.all([
-        fetchRooms(),
-        fetchRoomInventory()
-      ])
-      setRoomTypes(roomsData)
-      setInventory(inventoryData)
+      await run(async () => {
+        const [roomsData, inventoryData] = await Promise.all([
+          fetchRooms(),
+          fetchRoomInventory()
+        ])
+        setRoomTypes(roomsData)
+        setInventory(inventoryData)
+      })
     } catch (error) {
       console.error('Failed to load inventory data:', error)
       alert('Failed to load inventory data')
@@ -168,6 +172,8 @@ export default function RoomInventoryManager() {
       if (searchQuery.trim()) return hasRooms
       return isCatalogRoomType(type.name) || hasRooms
     })
+
+  if (loading) return <AdminLoading label="Loading room numbers..." />
 
   return (
     <div className="space-y-6">

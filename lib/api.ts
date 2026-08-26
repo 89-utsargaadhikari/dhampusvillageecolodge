@@ -377,6 +377,38 @@ export const deleteBusiness = async (id: number) => {
   return res.json()
 }
 
+export const fetchBusinessRates = async (businessId: number | string) => {
+  const res = await fetch(`/api/business/${businessId}/rates`)
+  if (!res.ok) throw new Error('Failed to fetch rate cards')
+  const data = await res.json()
+  return Array.isArray(data) ? data : []
+}
+
+export const saveBusinessRates = async (businessId: number | string, payload: any) => {
+  const res = await fetch(`/api/business/${businessId}/rates`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.error || 'Failed to save rate card')
+  }
+  return res.json()
+}
+
+export const deleteBusinessRate = async (businessId: number | string, query: { rateId?: number; roomType?: string; mealPlan?: string }) => {
+  const params = new URLSearchParams()
+  if (query.rateId) params.set('rateId', String(query.rateId))
+  if (query.roomType) params.set('roomType', query.roomType)
+  if (query.mealPlan) params.set('mealPlan', query.mealPlan)
+  const res = await fetch(`/api/business/${businessId}/rates?${params.toString()}`, {
+    method: 'DELETE'
+  })
+  if (!res.ok) throw new Error('Failed to delete rate card')
+  return res.json()
+}
+
 export const importBusinesses = async (businesses: any[]) => {
   const res = await fetch('/api/business/import', {
     method: 'POST',

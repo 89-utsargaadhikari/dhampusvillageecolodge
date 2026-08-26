@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { Plus, Building2, Users, X } from "lucide-react"
 import { AdminSearch, matchesSearch } from "@/components/admin-search"
-import { fetchBusinesses, fetchBookings, createBooking, fetchRooms, fetchRoomInventory } from "@/lib/api"
+import { fetchBusinesses, fetchBookings, createBooking, fetchRooms, fetchRoomInventory, fetchBusinessRates } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -11,7 +11,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { CURRENCIES, MEAL_PLANS, OCCUPANCY_TYPES, formatMoney, mealPlanLabel, occupancyForPax, paxForOccupancy, picklistRoomTypes, stayNightsAndDays, stayNightsCount, stayTotalFromNightlyRate } from "@/lib/hotel"
+import { CURRENCIES, MEAL_PLANS, OCCUPANCY_TYPES, currencySymbol, formatMoney, mealPlanLabel, picklistRoomTypes } from "@/lib/hotel"
+import { lookupPartnerRate, partnerCurrencies, preferredPartnerCurrency, type RateCardRow } from "@/lib/rate-cards"
+import { AdminLoading, useAdminLoader } from "@/components/admin-loading"
 
 interface Business {
   id: number
@@ -35,6 +37,8 @@ export default function BusinessBookings() {
   const [partnerSearch, setPartnerSearch] = useState("")
   const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null)
   const [availableRoomNumbers, setAvailableRoomNumbers] = useState<{ [key: number]: string[] }>({})
+  const [partnerRates, setPartnerRates] = useState<RateCardRow[]>([])
+  const { loading, run } = useAdminLoader()
   
   const [formData, setFormData] = useState({
     businessId: "",
@@ -58,14 +62,16 @@ export default function BusinessBookings() {
 
   const loadData = async () => {
     try {
-      const [businessesData, bookingsData, roomsData] = await Promise.all([
-        fetchBusinesses(),
-        fetchBookings(),
-        fetchRooms().catch(() => [])
-      ])
-      setBusinesses(businessesData.filter((b: any) => b.active))
-      setBookings(bookingsData.filter((b: any) => b.bookingSource === "business"))
-      setRooms(roomsData)
+      await run(async () => {
+        const [businessesData, bookingsData, roomsData] = await Promise.all([
+          fetchBusinesses(),
+          fetchBookings(),
+          fetchRooms()
+        ])
+        setBusinesses(businessesData.filter((b: any) => b.active))
+        setBookings(bookingsData.filter((b: any) => b.bookingSource === "business"))
+        setRooms(roomsData)
+      })
     } catch (error) {
       console.error('Failed to load data:', error)
     }
@@ -128,20 +134,45 @@ export default function BusinessBookings() {
       status: "Confirmed"
     })
     setSelectedBusiness(null)
+    setPartnerRates([])
     setAvailableRoomNumbers({})
     setIsDialogOpen(true)
   }
 
-  const handleBusinessSelect = (businessId: string) => {
+  const rateForRoom = (roomName: string, occupancy = formData.occupancy, mealPlan = formData.bookingType, currency = formData.currency, cards = partnerRates) => {
+    const rate = lookupPartnerRate(cards, { roomType: roomName, mealPlan, currency, occupancy })
+    return rate == null ? "" : String(rate)
+  }
+
+  const applyRatesToRooms = (rooms: RoomBooking[], occupancy: string, mealPlan: string, currency: string, cards = partnerRates) => {
+    return rooms.map((room) => ({
+      ...room,
+      price: room.room ? rateForRoom(room.room, occupancy, mealPlan, currency, cards) || room.price : room.price,
+    }))
+  }
+
+  const handleBusinessSelect = async (businessId: string) => {
     const business = businesses.find(b => b.id.toString() === businessId)
     setSelectedBusiness(business || null)
-    setFormData({ ...formData, businessId })
+    try {
+      const cards = await fetchBusinessRates(businessId)
+      setPartnerRates(cards)
+      const currency = preferredPartnerCurrency(cards, formData.currency)
+      setFormData({
+        ...formData,
+        businessId,
+        currency,
+        rooms: applyRatesToRooms(formData.rooms, formData.occupancy, formData.bookingType, currency, cards),
+      })
+    } catch {
+      setPartnerRates([])
+      setFormData({ ...formData, businessId })
+    }
   }
 
   const handleRoomSelect = (index: number, roomName: string) => {
-    const room = rooms.find(r => r.name === roomName)
     const newRooms = [...formData.rooms]
-    newRooms[index] = { ...newRooms[index], room: roomName, price: room?.price || "" }
+    newRooms[index] = { ...newRooms[index], room: roomName, price: rateForRoom(roomName) }
     setFormData({ ...formData, rooms: newRooms })
     loadAvailableRoomsForIndex(index, roomName)
   }
@@ -227,6 +258,8 @@ export default function BusinessBookings() {
     .filter(b => b.status !== "Cancelled")
     .reduce((sum, b) => sum + parseFloat(b.price || 0), 0)
 
+  if (loading) return <AdminLoading label="Loading business bookings..." />
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
@@ -257,7 +290,8 @@ export default function BusinessBookings() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">NPR {totalRevenue.toFixed(2)}</div>
+            <div className="text-2xl font-bold">{formatMoney(totalRevenue, "NPR")}</div>
+            <p className="text-xs text-muted-foreground">Sum of stored amounts; mixed currencies are not converted</p>
           </CardContent>
         </Card>
         <Card>
@@ -320,7 +354,7 @@ export default function BusinessBookings() {
                     </td>
                     <td className="p-2">{booking.checkin}</td>
                     <td className="p-2">{booking.checkout}</td>
-                    <td className="p-2">NPR {booking.price}</td>
+                    <td className="p-2">{formatMoney(booking.price, booking.currency || "NPR")}</td>
                     <td className="p-2">
                       <Badge variant={
                         booking.status === "Confirmed" ? "default" :
@@ -445,7 +479,7 @@ export default function BusinessBookings() {
                 <Label htmlFor="bookingType">Meal Plan *</Label>
                 <Select 
                   value={formData.bookingType} 
-                  onValueChange={(value) => setFormData({ ...formData, bookingType: value })}
+                  onValueChange={(value) => setFormData({ ...formData, bookingType: value, rooms: applyRatesToRooms(formData.rooms, formData.occupancy, value, formData.currency) })}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -461,11 +495,7 @@ export default function BusinessBookings() {
                 <Label>Occupancy</Label>
                 <Select
                   value={formData.occupancy}
-                  onValueChange={(value) => setFormData({
-                    ...formData,
-                    occupancy: value,
-                    numberOfGuests: String(paxForOccupancy(value)),
-                  })}
+                  onValueChange={(value) => setFormData({ ...formData, occupancy: value, rooms: applyRatesToRooms(formData.rooms, value, formData.bookingType, formData.currency) })}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -481,15 +511,20 @@ export default function BusinessBookings() {
                 <Label>Currency</Label>
                 <Select
                   value={formData.currency}
-                  onValueChange={(value) => setFormData({ ...formData, currency: value })}
+                  onValueChange={(value) => setFormData({ ...formData, currency: value, rooms: applyRatesToRooms(formData.rooms, formData.occupancy, formData.bookingType, value) })}
                 >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {CURRENCIES.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
-                    ))}
+                    {(partnerCurrencies(partnerRates).length ? partnerCurrencies(partnerRates) : CURRENCIES.map((item) => item.value)).map((value) => {
+                      const item = CURRENCIES.find((currency) => currency.value === value) || { value, label: value }
+                      return <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                    })}
+                    {partnerCurrencies(partnerRates).length > 0 &&
+                      CURRENCIES.filter((item) => !partnerCurrencies(partnerRates).includes(item.value)).map((item) => (
+                        <SelectItem key={item.value} value={item.value}>{item.label} (no partner card)</SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -596,7 +631,7 @@ export default function BusinessBookings() {
                         </Select>
                       </div>
                       <div>
-                        <Label>Rate / night *</Label>
+                        <Label>Rate ({currencySymbol(formData.currency)}) *</Label>
                         <Input
                           type="number"
                           min="0"

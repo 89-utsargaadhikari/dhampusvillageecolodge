@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
+import { resolveBookingPrice } from '@/lib/apply-partner-rate'
+import { normalizeCurrency } from '@/lib/rate-cards'
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -15,14 +17,20 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     if (body.roomNumber !== undefined) updateData.roomNumber = body.roomNumber || null
     if (body.checkin !== undefined) updateData.checkin = body.checkin
     if (body.checkout !== undefined) updateData.checkout = body.checkout
-    if (body.price !== undefined) updateData.price = String(body.price)
+    if (body.price !== undefined && String(body.price).trim() !== "") updateData.price = String(body.price)
     if (body.status !== undefined) updateData.status = body.status
     if (body.bookingSource !== undefined) updateData.bookingSource = body.bookingSource
     if (body.businessId !== undefined) updateData.businessId = body.businessId ? parseInt(body.businessId) : null
     if (body.numberOfGuests !== undefined) updateData.numberOfGuests = body.numberOfGuests ? parseInt(body.numberOfGuests) : 1
     if (body.bookingType !== undefined) updateData.bookingType = body.bookingType
     if (body.occupancy !== undefined) updateData.occupancy = body.occupancy || null
-    if (body.currency !== undefined) updateData.currency = body.currency || "NPR"
+    if (body.currency !== undefined) updateData.currency = normalizeCurrency(body.currency)
+    if (body.price !== undefined && String(body.price).trim() === "") {
+      updateData.price = await resolveBookingPrice({
+        ...body,
+        businessId: body.businessId ?? (await prisma.booking.findUnique({ where: { id }, select: { businessId: true } }))?.businessId,
+      })
+    }
     if (body.extraBed !== undefined) updateData.extraBed = Boolean(body.extraBed)
     if (body.groupId !== undefined) updateData.groupId = body.groupId || null
 

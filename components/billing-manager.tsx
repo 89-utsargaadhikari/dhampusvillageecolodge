@@ -19,7 +19,8 @@ import {
   referencedVatPercent,
   roundMoney,
 } from "@/lib/vat"
-import { mealPlanLabel, stayNightsCount, formatMoney } from "@/lib/hotel"
+import { formatMoney, mealPlanLabel } from "@/lib/hotel"
+import { normalizeCurrency } from "@/lib/rate-cards"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -28,6 +29,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { AdminSearch, matchesSearch } from "@/components/admin-search"
+import { AdminLoading, AdminRefreshHint, useAdminLoader } from "@/components/admin-loading"
+import { Spinner } from "@/components/ui/spinner"
 
 interface Bill {
   booking: any
@@ -77,11 +80,17 @@ export default function BillingManager() {
   const [searchQuery, setSearchQuery] = useState("")
   const [businesses, setBusinesses] = useState<any[]>([])
   const [companySearch, setCompanySearch] = useState("")
+  const [checkingOut, setCheckingOut] = useState(false)
+  const { loading, refreshing, run } = useAdminLoader()
 
   const referencedOrders = selectedBill?.restaurantOrders || []
   const reference = orderReference(referencedOrders)
+  const roomCurrency = normalizeCurrency(selectedBill?.booking?.currency)
+  const mixedCurrencies = Boolean(selectedBill && roomCurrency !== "NPR" && selectedBill.restaurantInclusive > 0)
   const inclusiveSubtotal = selectedBill
-    ? selectedBill.roomCharges + selectedBill.restaurantInclusive
+    ? mixedCurrencies
+      ? selectedBill.restaurantInclusive
+      : selectedBill.roomCharges + selectedBill.restaurantInclusive
     : 0
   const billTotals = useMemo(
     () =>
@@ -148,6 +157,7 @@ export default function BillingManager() {
 
   const loadData = async () => {
     try {
+      await run(async () => {
       const allBookings = await fetchBookings()
       console.log("📊 Billing - All bookings:", allBookings.length)
       
@@ -175,6 +185,7 @@ export default function BillingManager() {
       )
       console.log("🚶 Billing - Walk-in orders (unpaid):", walkIns.length)
       setWalkInOrders(walkIns)
+      })
     } catch (error) {
       console.error('❌ Billing - Failed to load data:', error)
     }
@@ -259,7 +270,7 @@ Number of Nights: ${selectedBill.numberOfNights}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ROOM CHARGES:
-${selectedBill.numberOfNights > 0 ? `${selectedBill.numberOfNights} nights @ ${(selectedBill.roomCharges / selectedBill.numberOfNights).toFixed(2)}/night` : "No room stay"}
+${selectedBill.numberOfNights > 0 ? `${selectedBill.numberOfNights} nights @ ${formatMoney(selectedBill.roomCharges / selectedBill.numberOfNights, selectedBill.booking.currency)}/night` : "No room stay"}
 Total Room Charges: ${formatMoney(selectedBill.roomCharges, selectedBill.booking.currency)}
 
 RESTAURANT & BAR CHARGES:
@@ -274,7 +285,7 @@ Total Restaurant: NPR ${selectedBill.restaurantInclusive.toFixed(2)}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Inclusive Subtotal: NPR ${selectedBillAmounts.inclusiveSubtotal.toFixed(2)}
+${mixedCurrencies ? `Room total: ${formatMoney(selectedBill.roomCharges, selectedBill.booking.currency)}\nRestaurant total: NPR ${selectedBillAmounts.totalAmount.toFixed(2)}` : `Inclusive Subtotal: NPR ${selectedBillAmounts.inclusiveSubtotal.toFixed(2)}`}
 Discount: NPR ${selectedBillAmounts.discountAmount.toFixed(2)}
 VAT exclusive: NPR ${selectedBillAmounts.exclusiveAmount.toFixed(2)}
 VAT (${checkoutVatPercent}% inclusive): NPR ${selectedBillAmounts.vat.toFixed(2)}
@@ -325,6 +336,9 @@ Thank you for staying with us!
       return { roomDue: 0, restaurantDue: 0 }
     }
     const sourceTotal = selectedBill.roomCharges + selectedBill.restaurantInclusive
+    if (mixedCurrencies) {
+      return { roomDue: selectedBill.roomCharges, restaurantDue: selectedBillAmounts.totalAmount }
+    }
     if (sourceTotal <= 0) {
       return { roomDue: 0, restaurantDue: selectedBillAmounts.totalAmount }
     }
@@ -337,11 +351,12 @@ Thank you for staying with us!
 
   const handleCheckout = async () => {
     if (!selectedBill || !selectedBillAmounts) return
-    if (discountTooLarge) {
-      alert("Discount cannot be larger than the VAT-exclusive amount.")
+    if (discountTooLarge || checkingOut) {
+      if (discountTooLarge) alert("Discount cannot be larger than the VAT-exclusive amount.")
       return
     }
 
+    setCheckingOut(true)
     try {
       const isWalkIn = selectedBill.booking.status === "Walk-in"
       const { roomDue, restaurantDue } = allocatedDues()
@@ -450,16 +465,16 @@ Thank you for staying with us!
           category: "room_booking",
           description: `Room ${selectedBill.booking.roomNumber} - ${selectedBill.booking.guest} (${selectedBill.numberOfNights} nights)`,
           amount: roomDue,
-          currency: "NPR",
+          currency: roomCurrency,
           paymentMethod: roomPaymentMethod
         })
         console.log('✅ Room transaction created')
         paidAmount += roomDue
-        paymentSummary.push(`Room: NPR ${roomDue.toFixed(2)} (${roomPaymentMethod.toUpperCase()})`)
+        paymentSummary.push(`Room: ${formatMoney(roomDue, roomCurrency)} (${roomPaymentMethod.toUpperCase()})`)
       } else {
         // Create credit account for room charges
         creditAmount += roomDue
-        paymentSummary.push(`Room: NPR ${roomDue.toFixed(2)} (CREDIT)`)
+        paymentSummary.push(`Room: ${formatMoney(roomDue, roomCurrency)} (CREDIT)`)
       }
       
       // Add restaurant income if any and if paid, or add to credit
@@ -542,13 +557,18 @@ Thank you for staying with us!
       console.error('❌ Failed to checkout:', error)
       console.error('Error details:', error.message, error.response)
       alert(`Failed to complete checkout: ${error.message || 'Please try again.'}`)
+    } finally {
+      setCheckingOut(false)
     }
   }
+
+  if (loading) return <AdminLoading label="Loading billing..." />
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <h2 className="text-xl sm:text-2xl font-bold">Billing & Checkout</h2>
+        <AdminRefreshHint show={refreshing} />
       </div>
 
       <AdminSearch
@@ -616,7 +636,9 @@ Thank you for staying with us!
                           <div>
                             <p className="text-sm text-gray-600">Estimated Total</p>
                             <p className="text-2xl font-bold text-primary">
-                              {formatMoney((parseFloat(booking.price) || 0) + restaurantTotal, booking.currency || "NPR")}
+                              {normalizeCurrency(booking.currency) === "NPR"
+                                ? formatMoney(parseFloat(booking.price || "0") + restaurantTotal, "NPR")
+                                : `${formatMoney(booking.price, booking.currency)} + ${formatMoney(restaurantTotal, "NPR")}`}
                             </p>
                             <p className="text-xs text-gray-500">(VAT inclusive)</p>
                           </div>
@@ -780,6 +802,7 @@ Thank you for staying with us!
                       <span className="text-gray-600">Company:</span> {selectedBill.booking.business?.name || "N/A"}
                     </p>
                     <p><span className="text-gray-600">Meal plan:</span> {mealPlanLabel(selectedBill.booking.bookingType)}</p>
+                    <p><span className="text-gray-600">Currency:</span> {roomCurrency}</p>
                     <p><span className="text-gray-600">Room:</span> <span className="font-medium">{selectedBill.booking.roomNumber}</span></p>
                   </div>
                 </div>
@@ -903,8 +926,14 @@ Thank you for staying with us!
 
               {selectedBillAmounts && (
                 <div className="border-t-2 pt-4 space-y-2">
+                  {mixedCurrencies && (
+                    <div className="flex justify-between text-lg">
+                      <span>Room ({roomCurrency})</span>
+                      <span className="font-semibold">{formatMoney(selectedBill.roomCharges, roomCurrency)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-lg">
-                    <span>Inclusive subtotal</span>
+                    <span>{mixedCurrencies ? "Restaurant inclusive subtotal" : "Inclusive subtotal"}</span>
                     <span className="font-semibold">NPR {selectedBillAmounts.inclusiveSubtotal.toFixed(2)}</span>
                   </div>
                   {selectedBillAmounts.discountAmount > 0 && (
@@ -923,7 +952,11 @@ Thank you for staying with us!
                   </div>
                   <div className="flex justify-between text-2xl font-bold text-primary border-t-2 pt-3 mt-3">
                     <span>TOTAL AMOUNT</span>
-                    <span>NPR {selectedBillAmounts.totalAmount.toFixed(2)}</span>
+                    <span>
+                      {mixedCurrencies
+                        ? `${formatMoney(selectedBill.roomCharges, roomCurrency)} + NPR ${selectedBillAmounts.totalAmount.toFixed(2)}`
+                        : `NPR ${selectedBillAmounts.totalAmount.toFixed(2)}`}
+                    </span>
                   </div>
                 </div>
               )}
@@ -968,7 +1001,11 @@ Thank you for staying with us!
             {selectedBill && selectedBillAmounts && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <p className="text-sm text-gray-600">Total Amount</p>
-                <p className="text-2xl sm:text-3xl font-bold text-primary break-words">NPR {selectedBillAmounts.totalAmount.toFixed(2)}</p>
+                <p className="text-2xl sm:text-3xl font-bold text-primary break-words">
+                  {mixedCurrencies
+                    ? `${formatMoney(selectedBill.roomCharges, roomCurrency)} + NPR ${selectedBillAmounts.totalAmount.toFixed(2)}`
+                    : `NPR ${selectedBillAmounts.totalAmount.toFixed(2)}`}
+                </p>
                 <p className="text-xs text-gray-500 mt-1 break-words">
                   Inclusive prices only. VAT NPR {selectedBillAmounts.vat.toFixed(2)} is already included
                   {selectedBillAmounts.discountAmount > 0 ? `, after NPR ${selectedBillAmounts.discountAmount.toFixed(2)} discount` : ""}.
@@ -980,7 +1017,7 @@ Thank you for staying with us!
             <div className="border border-gray-200 rounded-lg p-4 space-y-3">
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1">
                 <h4 className="font-semibold">🏨 Room Charges</h4>
-                <p className="text-lg font-bold">NPR {allocatedDues().roomDue.toFixed(2)}</p>
+                <p className="text-lg font-bold">{formatMoney(allocatedDues().roomDue, roomCurrency)}</p>
               </div>
               
               <div className="grid grid-cols-2 gap-3">
@@ -1098,11 +1135,11 @@ Thank you for staying with us!
               </Button>
               <Button 
                 onClick={handleCheckout}
-                disabled={discountTooLarge}
+                disabled={discountTooLarge || checkingOut}
                 className="flex-1 bg-green-600 hover:bg-green-700"
               >
-                <Check className="w-4 h-4 mr-2" />
-                Confirm Checkout
+                {checkingOut ? <Spinner className="size-4 mr-2" /> : <Check className="w-4 h-4 mr-2" />}
+                {checkingOut ? "Checking out..." : "Confirm Checkout"}
               </Button>
             </div>
           </div>

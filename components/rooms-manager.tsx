@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { AdminSearch, matchesSearch } from "@/components/admin-search"
+import { AdminLoading, useAdminLoader } from "@/components/admin-loading"
 
 export default function RoomsManager() {
   const [rooms, setRooms] = useState<Room[]>([])
@@ -19,6 +20,7 @@ export default function RoomsManager() {
   const [editingRoom, setEditingRoom] = useState<Room | null>(null)
   const [imagePreview, setImagePreview] = useState<string>("")
   const [searchQuery, setSearchQuery] = useState("")
+  const { loading, run } = useAdminLoader()
   const [formData, setFormData] = useState({
     name: "",
     price: "",
@@ -38,8 +40,10 @@ export default function RoomsManager() {
   
   const loadData = async () => {
     try {
-      const roomsData = await fetchRooms()
-      setRooms(roomsData)
+      await run(async () => {
+        const roomsData = await fetchRooms()
+        setRooms(roomsData)
+      })
     } catch (error) {
       console.error('Failed to load rooms:', error)
       alert('Failed to load rooms data')
@@ -146,6 +150,8 @@ export default function RoomsManager() {
       }
     }
   }
+
+  if (loading) return <AdminLoading label="Loading rooms..." />
 
   return (
     <div className="space-y-6">

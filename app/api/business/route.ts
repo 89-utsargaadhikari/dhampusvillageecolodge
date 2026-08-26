@@ -8,7 +8,18 @@ export async function GET() {
       orderBy: { name: 'asc' },
       include: {
         _count: {
-          select: { bookings: true }
+          select: { bookings: true, rateCards: true }
+        },
+        rateCards: {
+          select: {
+            id: true,
+            roomType: true,
+            mealPlan: true,
+            currency: true,
+            sglRate: true,
+            dblRate: true,
+            trplRate: true,
+          }
         }
       }
     })

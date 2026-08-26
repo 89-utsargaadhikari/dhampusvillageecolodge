@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
+import { resolveBookingPrice } from '@/lib/apply-partner-rate'
+import { normalizeCurrency } from '@/lib/rate-cards'
 
-function bookingPayload(body: any) {
+async function bookingPayload(body: any) {
   return {
     guest: body.guest || "",
     email: body.email || null,
@@ -10,11 +12,11 @@ function bookingPayload(body: any) {
     roomNumber: body.roomNumber || null,
     checkin: body.checkin || "",
     checkout: body.checkout || "",
-    price: body.price === undefined || body.price === null || body.price === "" ? "0" : String(body.price),
+    price: await resolveBookingPrice(body),
     numberOfGuests: body.numberOfGuests ? parseInt(body.numberOfGuests) : 1,
     bookingType: body.bookingType || "EP",
     occupancy: body.occupancy || null,
-    currency: body.currency || "NPR",
+    currency: normalizeCurrency(body.currency),
     extraBed: Boolean(body.extraBed),
     groupId: body.groupId || null,
     status: body.status || 'Pending',
@@ -68,10 +70,11 @@ export async function POST(request: NextRequest) {
 
     const created = await prisma.$transaction(async (tx) => {
       const bookingIds = await nextBookingIds(tx, roomEntries.length)
+      const payloads = await Promise.all(roomEntries.map((room: any) => bookingPayload({ ...body, ...room, groupId })))
       await tx.booking.createMany({
-        data: roomEntries.map((room: any, index: number) => ({
+        data: payloads.map((payload, index) => ({
           bookingId: bookingIds[index],
-          ...bookingPayload({ ...body, ...room, groupId }),
+          ...payload,
         })),
       })
 

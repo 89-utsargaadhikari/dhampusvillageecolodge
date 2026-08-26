@@ -12,6 +12,8 @@ import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import RateCardManager from "./rate-card-manager"
 import { AdminSearch, matchesSearch } from "@/components/admin-search"
+import { partnerCurrencies } from "@/lib/rate-cards"
+import { AdminLoading, useAdminLoader } from "@/components/admin-loading"
 import * as XLSX from "xlsx"
 
 interface Business {
@@ -26,7 +28,8 @@ interface Business {
   currentCredit: number
   notes?: string | null
   active: boolean
-  _count?: { bookings: number }
+  _count?: { bookings: number; rateCards?: number }
+  rateCards?: { currency?: string }[]
 }
 
 export default function BusinessPartners() {
@@ -43,6 +46,7 @@ export default function BusinessPartners() {
   const [selectedBusinessForRates, setSelectedBusinessForRates] = useState<Business | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [rooms, setRooms] = useState<any[]>([]) // For room types
+  const { loading, run } = useAdminLoader()
   
   const [formData, setFormData] = useState({
     name: "",
@@ -63,8 +67,10 @@ export default function BusinessPartners() {
 
   const loadBusinesses = async () => {
     try {
-      const data = await fetchBusinesses()
-      setBusinesses(data)
+      await run(async () => {
+        const data = await fetchBusinesses()
+        setBusinesses(data)
+      })
     } catch (error) {
       console.error('Failed to load businesses:', error)
       alert('Failed to load businesses')
@@ -229,6 +235,7 @@ export default function BusinessPartners() {
         "Company": "ABC Travel",
         "Room Type": "Deluxe",
         "PLAN": "AP",
+        "Currency": "NPR",
         "DBL": 36000,
         "SGL": 27000,
         "TRPL": 0,
@@ -338,6 +345,8 @@ export default function BusinessPartners() {
     }
   }
 
+  if (loading) return <AdminLoading label="Loading business partners..." />
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
@@ -393,10 +402,17 @@ export default function BusinessPartners() {
               {business.irdNumber && (
                 <p className="text-sm"><strong>IRD:</strong> {business.irdNumber}</p>
               )}
-              <div className="flex gap-2 pt-2">
+              <div className="flex flex-wrap gap-2 pt-2">
                 <Badge variant="secondary">
                   {business._count?.bookings || 0} bookings
                 </Badge>
+                {partnerCurrencies(business.rateCards).length > 0 ? (
+                  partnerCurrencies(business.rateCards).map((currency) => (
+                    <Badge key={currency} variant="outline">{currency} rates</Badge>
+                  ))
+                ) : (
+                  <Badge variant="outline">No rate cards</Badge>
+                )}
                 <Badge variant={business.currentCredit > 0 ? "destructive" : "default"}>
                   Credit: NPR {business.currentCredit.toFixed(2)}
                 </Badge>

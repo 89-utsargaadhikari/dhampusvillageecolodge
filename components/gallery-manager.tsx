@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { AdminSearch, matchesSearch } from "@/components/admin-search"
+import { AdminLoading, useAdminLoader } from "@/components/admin-loading"
 
 export default function GalleryManager() {
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([])
@@ -21,6 +22,7 @@ export default function GalleryManager() {
     category: "Building",
     src: "",
   })
+  const { loading, run } = useAdminLoader()
 
   useEffect(() => {
     loadGallery()
@@ -28,8 +30,10 @@ export default function GalleryManager() {
   
   const loadGallery = async () => {
     try {
-      const items = await fetchGallery()
-      setGalleryItems(items)
+      await run(async () => {
+        const items = await fetchGallery()
+        setGalleryItems(items)
+      })
     } catch (error) {
       console.error('Failed to load gallery:', error)
     }
@@ -93,6 +97,8 @@ export default function GalleryManager() {
       }
     }
   }
+
+  if (loading) return <AdminLoading label="Loading gallery..." />
 
   return (
     <div className="space-y-6">

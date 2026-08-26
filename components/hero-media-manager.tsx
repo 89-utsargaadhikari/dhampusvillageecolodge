@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { AdminSearch, matchesSearch } from "@/components/admin-search"
+import { AdminLoading, useAdminLoader } from "@/components/admin-loading"
 
 interface HeroMedia {
   id: number
@@ -23,6 +24,7 @@ export default function HeroMediaManager() {
   })
   const [loading, setLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
+  const { loading: pageLoading, run } = useAdminLoader()
 
   useEffect(() => {
     fetchHeroMedia()
@@ -30,9 +32,11 @@ export default function HeroMediaManager() {
 
   const fetchHeroMedia = async () => {
     try {
-      const response = await fetch("/api/hero-media")
-      const data = await response.json()
-      setHeroMedia(data)
+      await run(async () => {
+        const response = await fetch("/api/hero-media")
+        const data = await response.json()
+        setHeroMedia(data)
+      })
     } catch (error) {
       console.error("Failed to fetch hero media:", error)
     }
@@ -96,6 +100,8 @@ export default function HeroMediaManager() {
     }
     reader.readAsDataURL(file)
   }
+
+  if (pageLoading) return <AdminLoading label="Loading hero media..." />
 
   return (
     <div className="space-y-6">
