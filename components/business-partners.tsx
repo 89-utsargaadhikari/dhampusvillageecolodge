@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import RateCardManager from "./rate-card-manager"
+import { AdminSearch, matchesSearch } from "@/components/admin-search"
 import * as XLSX from "xlsx"
 
 interface Business {
@@ -40,6 +41,7 @@ export default function BusinessPartners() {
   const [bookingFile, setBookingFile] = useState<File | null>(null)
   const [importResult, setImportResult] = useState<any>(null)
   const [selectedBusinessForRates, setSelectedBusinessForRates] = useState<Business | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
   const [rooms, setRooms] = useState<any[]>([]) // For room types
   
   const [formData, setFormData] = useState({
@@ -355,8 +357,14 @@ export default function BusinessPartners() {
         </div>
       </div>
 
+      <AdminSearch
+        value={searchQuery}
+        onChange={setSearchQuery}
+        placeholder="Search partners, contact, phone, email..."
+      />
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {businesses.map((business) => (
+        {businesses.filter((business) => matchesSearch(searchQuery, business.name, business.contactPerson, business.phone, business.email, business.address, business.irdNumber)).map((business) => (
           <Card key={business.id} className={!business.active ? "opacity-60" : ""}>
             <CardHeader>
               <CardTitle className="flex items-start justify-between">
@@ -405,6 +413,9 @@ export default function BusinessPartners() {
           </Card>
         ))}
       </div>
+      {businesses.length > 0 && businesses.filter((business) => matchesSearch(searchQuery, business.name, business.contactPerson, business.phone, business.email, business.address, business.irdNumber)).length === 0 && (
+        <p className="text-center text-gray-500 py-6">No partners match “{searchQuery}”.</p>
+      )}
 
       {/* Add/Edit Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

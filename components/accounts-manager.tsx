@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { AdminSearch, matchesSearch } from "@/components/admin-search"
 // Credit management now fully database-driven
 import { addNotification } from "@/lib/notifications"
 import { 
@@ -61,6 +62,7 @@ export default function AccountsManager() {
   const [selectedAccount, setSelectedAccount] = useState<CreditAccount | null>(null)
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth())
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
+  const [searchQuery, setSearchQuery] = useState("")
 
   useEffect(() => {
     loadData()
@@ -132,6 +134,12 @@ export default function AccountsManager() {
     const txnDate = new Date(t.date)
     return txnDate.getMonth() === selectedMonth && txnDate.getFullYear() === selectedYear
   })
+  const visibleTransactions = filteredTransactions.filter((t) =>
+    matchesSearch(searchQuery, t.description, t.category, t.type, t.paymentMethod, t.amount, t.currency)
+  )
+  const visibleCredits = creditAccounts.filter((account) =>
+    matchesSearch(searchQuery, account.guestName, account.guestPhone, account.guestEmail, account.status, account.notes, account.linkedBookingId)
+  )
 
   const totalIncome = filteredTransactions
     .filter(t => t.type === "income")
@@ -323,10 +331,16 @@ export default function AccountsManager() {
         </Card>
       </div>
 
+      <AdminSearch
+        value={searchQuery}
+        onChange={setSearchQuery}
+        placeholder="Search description, category, payment..."
+      />
+
       {/* Transactions Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Transactions ({filteredTransactions.length})</CardTitle>
+          <CardTitle>Transactions ({visibleTransactions.length})</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
@@ -343,7 +357,7 @@ export default function AccountsManager() {
                 </tr>
               </thead>
               <tbody>
-                {filteredTransactions.map(txn => (
+                {visibleTransactions.map(txn => (
                   <tr key={txn.id} className="border-b hover:bg-gray-50">
                     <td className="px-3 sm:px-6 py-4">{new Date(txn.date).toLocaleDateString()}</td>
                     <td className="px-3 sm:px-6 py-4">
@@ -452,16 +466,22 @@ export default function AccountsManager() {
             </Card>
           )}
           
+          <AdminSearch
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search guest, phone, or notes..."
+          />
+
           {/* Credit Accounts Table */}
           <Card>
             <CardHeader>
-              <CardTitle>Credit Accounts ({creditAccounts.length})</CardTitle>
+              <CardTitle>Credit Accounts ({visibleCredits.length})</CardTitle>
             </CardHeader>
             <CardContent>
-              {creditAccounts.length === 0 ? (
+              {creditAccounts.length === 0 || (searchQuery && visibleCredits.length === 0) ? (
                 <div className="text-center py-12 text-gray-500">
                   <CreditCard className="w-12 h-12 mx-auto mb-4 opacity-20" />
-                  <p className="text-sm">No credit accounts yet</p>
+                  <p className="text-sm">{searchQuery ? `No credit accounts match “${searchQuery}”` : "No credit accounts yet"}</p>
                   <Button className="mt-4" onClick={() => setIsCreditDialogOpen(true)}>
                     <Plus className="w-4 h-4 mr-2" />
                     Add First Credit Account
@@ -483,7 +503,7 @@ export default function AccountsManager() {
                       </tr>
                     </thead>
                     <tbody>
-                      {creditAccounts.map(account => {
+                      {visibleCredits.map(account => {
                         const isOverdue = account.dueDate < new Date().toISOString().split("T")[0] && account.status !== "paid"
                         const daysOverdue = isOverdue ? Math.floor((new Date().getTime() - new Date(account.dueDate).getTime()) / (1000 * 60 * 60 * 24)) : 0
                         

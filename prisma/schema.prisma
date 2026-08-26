@@ -19,6 +19,7 @@ model Room {
   id          Int       @id @default(autoincrement())
   name        String    @unique
   price       String
+  currency    String    @default("NPR") // NPR | USD | INR
   description String
   capacity    Int
   status      String    // "Available" | "Booked"
@@ -124,6 +125,9 @@ model SiteSettings {
   id        Int      @id @default(autoincrement())
   logoImage String?  @db.Text
   siteName  String   @default("Dhampus Eco Lodge")
+  email     String?  // Exists in live DB; kept to avoid dropping data
+  phone     String?
+  whatsapp  String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -198,14 +202,14 @@ model RestaurantOrder {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   
-  booking     Booking?  @relation(fields: [bookingId], references: [id])
+  booking     Booking?  @relation(fields: [bookingId], references: [id], onDelete: SetNull)
   items       OrderItem[]
 }
 
 model OrderItem {
   id         Int      @id @default(autoincrement())
   orderId    Int
-  menuItemId Int
+  menuItemId Int?
   name       String?
   quantity   Int
   price      Float
@@ -213,7 +217,7 @@ model OrderItem {
   createdAt  DateTime @default(now())
   
   order     RestaurantOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  menuItem  RestaurantMenuItem @relation(fields: [menuItemId], references: [id])
+  menuItem  RestaurantMenuItem? @relation(fields: [menuItemId], references: [id], onDelete: SetNull)
 }
 
 // ============================================

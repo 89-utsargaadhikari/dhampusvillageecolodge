@@ -1,8 +1,9 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Plus, Edit, Trash2, ShoppingCart, Package, AlertCircle, Search } from "lucide-react"
-import { calculateInclusiveVat } from "@/lib/vat"
+import { Plus, Minus, Edit, Trash2, ShoppingCart, Search } from "lucide-react"
+import { calculateInclusiveVat, DEFAULT_VAT_PERCENT } from "@/lib/vat"
+import { AdminSearch, matchesSearch } from "@/components/admin-search"
 import { fetchBookings } from "@/lib/api"
 import { 
   fetchRestaurantMenu, 
@@ -44,12 +45,19 @@ interface MenuItem {
   inventoryItem?: InventoryLink | null
 }
 
+interface OrderItem {
+  menuItemId: number
+  name: string
+  quantity: number
+  price: number
+}
+
 interface Order {
   id: number
   orderNumber: string
   roomNumber: string
   guestName: string
-  items: { menuItemId: number; name: string; quantity: number; price: number }[]
+  items: OrderItem[]
   subtotal: number
   discountType?: string | null
   discountValue?: number | null
@@ -61,6 +69,12 @@ interface Order {
   createdAt: string
 }
 
+function matchesItemSearch(item: { name: string; category: string }, query: string) {
+  const q = query.trim().toLowerCase()
+  if (!q) return true
+  return item.name.toLowerCase().includes(q) || item.category.toLowerCase().includes(q)
+}
+
 export default function RestaurantManager() {
   const [activeTab, setActiveTab] = useState<"menu" | "orders" | "inventory">("menu")
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
@@ -70,12 +84,12 @@ export default function RestaurantManager() {
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null)
   const [editingOrder, setEditingOrder] = useState<Order | null>(null)
   const [bookings, setBookings] = useState<any[]>([])
-  const [selectedItems, setSelectedItems] = useState<{ menuItemId: number; name: string; quantity: number; price: number }[]>([])
-  const [taxPercentage, setTaxPercentage] = useState(13) // Default 13% VAT for Nepal
-  const [discountType, setDiscountType] = useState<"percentage" | "amount">("percentage")
-  const [discountValue, setDiscountValue] = useState(0)
+  const [selectedItems, setSelectedItems] = useState<OrderItem[]>([])
   const [orderType, setOrderType] = useState<"room_service" | "walk_in">("room_service")
   const [menuSearch, setMenuSearch] = useState("")
+  const [catalogSearch, setCatalogSearch] = useState("")
+  const [inventorySearch, setInventorySearch] = useState("")
+  const [orderSearch, setOrderSearch] = useState("")
   const [menuCategory, setMenuCategory] = useState("food")
   const [trackStock, setTrackStock] = useState(false)
   const [addStockUnit, setAddStockUnit] = useState("bottles")
@@ -205,23 +219,44 @@ export default function RestaurantManager() {
   const handleOpenEditOrder = (order: Order) => {
     setEditingOrder(order)
     setSelectedItems(order.items)
-    setTaxPercentage(order.taxPercentage)
-    setDiscountType((order.discountType as "percentage" | "amount") || "percentage")
-    setDiscountValue(order.discountValue || 0)
     setIsOrderDialogOpen(true)
   }
+
+  const setItemQuantity = (item: MenuItem, quantity: number) => {
+    if (quantity <= 0) {
+      setSelectedItems((prev) => prev.filter((i) => i.menuItemId !== item.id))
+      return
+    }
+    setSelectedItems((prev) => {
+      const existing = prev.find((i) => i.menuItemId === item.id)
+      if (existing) {
+        return prev.map((i) => (i.menuItemId === item.id ? { ...i, quantity } : i))
+      }
+      return [...prev, { menuItemId: item.id, name: item.name, quantity, price: item.price }]
+    })
+  }
+
+  const changeSelectedQuantity = (menuItemId: number, delta: number) => {
+    const current = selectedItems.find((i) => i.menuItemId === menuItemId)
+    if (!current) return
+    const nextQty = current.quantity + delta
+    if (nextQty <= 0) {
+      setSelectedItems((prev) => prev.filter((i) => i.menuItemId !== menuItemId))
+      return
+    }
+    setSelectedItems((prev) => prev.map((i) => (i.menuItemId === menuItemId ? { ...i, quantity: nextQty } : i)))
+  }
+
+  const orderTotals = calculateInclusiveVat({
+    inclusiveSubtotal: selectedItems.reduce((sum, item) => sum + item.price * item.quantity, 0)
+  })
 
   const handleCreateOrder = async (orderData: any) => {
     try {
       console.log('🔵 Frontend: Starting order creation', orderData)
       
       const inclusiveSubtotal = orderData.items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0)
-      const totals = calculateInclusiveVat({
-        inclusiveSubtotal,
-        vatPercent: orderData.taxPercentage,
-        discountType: orderData.discountType,
-        discountValue: orderData.discountValue
-      })
+      const totals = calculateInclusiveVat({ inclusiveSubtotal })
       
       const orderPayload = {
         orderNumber: `ORD-${Date.now()}`,
@@ -232,11 +267,11 @@ export default function RestaurantManager() {
         orderType: orderData.orderType,
         items: orderData.items,
         subtotal: totals.inclusiveSubtotal,
-        discountType: orderData.discountType,
-        discountValue: orderData.discountValue,
-        discountAmount: totals.discountAmount,
+        discountType: null,
+        discountValue: 0,
+        discountAmount: 0,
         tax: totals.vatAmount,
-        taxPercentage: orderData.taxPercentage,
+        taxPercentage: DEFAULT_VAT_PERCENT,
         total: totals.total,
         status: "pending",
         paymentStatus: "unpaid",
@@ -260,8 +295,6 @@ export default function RestaurantManager() {
       await loadData()
       setIsOrderDialogOpen(false)
       setSelectedItems([])
-      setDiscountType("percentage")
-      setDiscountValue(0)
       setOrderType("room_service")
       alert('✅ Order created successfully!')
     } catch (error: any) {
@@ -279,21 +312,16 @@ export default function RestaurantManager() {
       console.log('🔵 Editing order:', editingOrder)
       
       const inclusiveSubtotal = orderData.items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0)
-      const totals = calculateInclusiveVat({
-        inclusiveSubtotal,
-        vatPercent: orderData.taxPercentage,
-        discountType: orderData.discountType,
-        discountValue: orderData.discountValue
-      })
+      const totals = calculateInclusiveVat({ inclusiveSubtotal })
       
       const orderPayload = {
         items: orderData.items,
         subtotal: totals.inclusiveSubtotal,
-        discountType: orderData.discountType,
-        discountValue: orderData.discountValue,
-        discountAmount: totals.discountAmount,
+        discountType: null,
+        discountValue: 0,
+        discountAmount: 0,
         tax: totals.vatAmount,
-        taxPercentage: orderData.taxPercentage,
+        taxPercentage: DEFAULT_VAT_PERCENT,
         total: totals.total,
       }
       
@@ -306,8 +334,6 @@ export default function RestaurantManager() {
       setIsOrderDialogOpen(false)
       setSelectedItems([])
       setEditingOrder(null)
-      setDiscountType("percentage")
-      setDiscountValue(0)
       alert('✅ Order updated successfully!')
     } catch (error: any) {
       console.error('❌ Frontend: Failed to update order:', error)
@@ -353,8 +379,18 @@ export default function RestaurantManager() {
             </Button>
           </div>
 
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Input
+              value={catalogSearch}
+              onChange={(e) => setCatalogSearch(e.target.value)}
+              placeholder="Search menu items..."
+              className="pl-9"
+            />
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {menuItems.map(item => (
+            {menuItems.filter((item) => matchesItemSearch(item, catalogSearch)).map(item => (
               <Card key={item.id}>
                 <CardHeader>
                   <CardTitle className="flex flex-wrap justify-between items-start gap-2">
@@ -387,6 +423,9 @@ export default function RestaurantManager() {
               </Card>
             ))}
           </div>
+          {menuItems.length > 0 && menuItems.filter((item) => matchesItemSearch(item, catalogSearch)).length === 0 && (
+            <p className="text-center text-gray-500 py-6">No menu items match “{catalogSearch}”.</p>
+          )}
         </div>
       )}
 
@@ -401,6 +440,12 @@ export default function RestaurantManager() {
             </Button>
           </div>
 
+          <AdminSearch
+            value={orderSearch}
+            onChange={setOrderSearch}
+            placeholder="Search orders, rooms, guests, or items..."
+          />
+
           <div className="space-y-3">
             {orders.length === 0 ? (
               <Card>
@@ -409,7 +454,29 @@ export default function RestaurantManager() {
                 </CardContent>
               </Card>
             ) : (
-              orders.map(order => (
+              <>
+              {orders.filter((order) => matchesSearch(
+                orderSearch,
+                order.orderNumber,
+                order.roomNumber,
+                order.guestName,
+                order.status,
+                ...(order.items || []).map((item) => item.name)
+              )).length === 0 && (
+                <Card>
+                  <CardContent className="pt-6 text-center text-gray-500">
+                    No orders match “{orderSearch}”.
+                  </CardContent>
+                </Card>
+              )}
+              {orders.filter((order) => matchesSearch(
+                orderSearch,
+                order.orderNumber,
+                order.roomNumber,
+                order.guestName,
+                order.status,
+                ...(order.items || []).map((item) => item.name)
+              )).map(order => (
                 <Card key={order.id}>
                   <CardContent className="pt-6">
                     <div className="flex justify-between items-start mb-4">
@@ -495,7 +562,7 @@ export default function RestaurantManager() {
                               await loadData()
                             } catch (error) {
                               console.error('Failed to delete order:', error)
-                              alert('Failed to delete order')
+                              alert(error instanceof Error ? error.message : 'Failed to delete order')
                             }
                           }
                         }}
@@ -506,7 +573,7 @@ export default function RestaurantManager() {
                     </div>
                     
                     <div className="border-t pt-3 space-y-1">
-                      {order.items.map((item, idx) => (
+                      {(order.items || []).map((item, idx) => (
                         <div key={idx} className="flex justify-between text-sm">
                           <span>{item.quantity}x {item.name}</span>
                           <span className="font-medium">NPR {(item.price * item.quantity).toFixed(2)}</span>
@@ -514,7 +581,7 @@ export default function RestaurantManager() {
                       ))}
                       <div className="border-t pt-2 mt-2 space-y-1">
                         <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">Subtotal:</span>
+                          <span className="text-gray-600">Inclusive subtotal:</span>
                           <span>NPR {order.subtotal.toFixed(2)}</span>
                         </div>
                         {order.discountValue && order.discountValue > 0 && (
@@ -526,11 +593,11 @@ export default function RestaurantManager() {
                           </div>
                         )}
                         <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">VAT exclusive:</span>
+                          <span className="text-gray-600">Exclusive Amount:</span>
                           <span>NPR {(order.total - order.tax).toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">VAT ({order.taxPercentage}% incl.):</span>
+                          <span className="text-gray-600">VAT amount:</span>
                           <span>NPR {order.tax.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between font-bold">
@@ -541,7 +608,8 @@ export default function RestaurantManager() {
                     </div>
                   </CardContent>
                 </Card>
-              ))
+              ))}
+              </>
             )}
           </div>
         </div>
@@ -561,6 +629,16 @@ export default function RestaurantManager() {
               {menuItems.filter((item) => item.inventoryItem).length} / {menuItems.length} tracked
             </Badge>
           </div>
+
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Input
+              value={inventorySearch}
+              onChange={(e) => setInventorySearch(e.target.value)}
+              placeholder="Search stock items..."
+              className="pl-9"
+            />
+          </div>
           
           <div className="bg-white rounded-lg shadow overflow-x-auto">
             <table className="w-full">
@@ -573,7 +651,14 @@ export default function RestaurantManager() {
                 </tr>
               </thead>
               <tbody>
-                {menuItems.map(item => (
+                {menuItems.filter((item) => matchesItemSearch(item, inventorySearch)).length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-3 sm:px-6 py-8 text-center text-gray-500">
+                      {inventorySearch ? `No stock items match “${inventorySearch}”.` : "No menu items yet."}
+                    </td>
+                  </tr>
+                )}
+                {menuItems.filter((item) => matchesItemSearch(item, inventorySearch)).map(item => (
                   <tr key={item.id} className="border-b hover:bg-gray-50">
                     <td className="px-3 sm:px-6 py-4 font-medium">{item.name}</td>
                     <td className="px-3 sm:px-6 py-4">
@@ -778,9 +863,6 @@ export default function RestaurantManager() {
         if (!open) {
           setEditingOrder(null)
           setSelectedItems([])
-          setTaxPercentage(13)
-          setDiscountType("percentage")
-          setDiscountValue(0)
           setOrderType("room_service")
           setMenuSearch("")
         }
@@ -814,10 +896,7 @@ export default function RestaurantManager() {
             
             if (editingOrder) {
               handleUpdateOrder({
-                items: selectedItems,
-                taxPercentage,
-                discountType,
-                discountValue
+                items: selectedItems
               })
             } else {
               handleCreateOrder({
@@ -827,10 +906,7 @@ export default function RestaurantManager() {
                   ? (formData.get("walkInGuestName") as string)
                   : (formData.get("guestName") as string),
                 tableNumber: orderType === "walk_in" ? (formData.get("tableNumber") as string) : undefined,
-                items: selectedItems,
-                taxPercentage,
-                discountType,
-                discountValue
+                items: selectedItems
               })
             }
           }} className="space-y-4">
@@ -951,11 +1027,9 @@ export default function RestaurantManager() {
                 {menuItems.length === 0 ? (
                   <p className="text-center text-gray-500 py-4">No menu items available. Please add menu items first.</p>
                 ) : (
-                  menuItems.filter(item => item.available && (
-                    !menuSearch ||
-                    item.name.toLowerCase().includes(menuSearch.toLowerCase()) ||
-                    item.category.toLowerCase().includes(menuSearch.toLowerCase())
-                  )).map(item => (
+                  menuItems.filter(item => item.available && matchesItemSearch(item, menuSearch)).map(item => {
+                    const quantity = selectedItems.find((i) => i.menuItemId === item.id)?.quantity || 0
+                    return (
                     <div key={item.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
                       <div className="flex-1">
                         <p className="font-medium">{item.name}</p>
@@ -966,36 +1040,28 @@ export default function RestaurantManager() {
                           </p>
                         )}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="number"
-                          min="0"
-                          defaultValue="0"
-                          className="w-20"
-                          onChange={(e) => {
-                            const quantity = parseInt(e.target.value) || 0
-                            if (quantity > 0) {
-                              const existing = selectedItems.find(i => i.menuItemId === item.id)
-                              if (existing) {
-                                setSelectedItems(selectedItems.map(i => 
-                                  i.menuItemId === item.id ? { ...i, quantity } : i
-                                ))
-                              } else {
-                                setSelectedItems([...selectedItems, {
-                                  menuItemId: item.id,
-                                  name: item.name,
-                                  quantity,
-                                  price: item.price
-                                }])
-                              }
-                            } else {
-                              setSelectedItems(selectedItems.filter(i => i.menuItemId !== item.id))
-                            }
-                          }}
-                        />
-                      </div>
+                      {quantity === 0 ? (
+                        <Button type="button" size="sm" variant="outline" onClick={() => setItemQuantity(item, 1)}>
+                          <Plus className="w-4 h-4 mr-1" />
+                          Add
+                        </Button>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <Button type="button" size="icon" variant="outline" className="h-8 w-8" onClick={() => setItemQuantity(item, quantity - 1)}>
+                            <Minus className="w-4 h-4" />
+                          </Button>
+                          <span className="w-6 text-center font-medium">{quantity}</span>
+                          <Button type="button" size="icon" variant="outline" className="h-8 w-8" onClick={() => setItemQuantity(item, quantity + 1)}>
+                            <Plus className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      )}
                     </div>
-                  ))
+                    )
+                  })
+                )}
+                {menuItems.length > 0 && menuItems.filter(item => item.available && matchesItemSearch(item, menuSearch)).length === 0 && (
+                  <p className="text-center text-gray-500 py-4">No items match “{menuSearch}”.</p>
                 )}
               </div>
             </div>
@@ -1005,109 +1071,38 @@ export default function RestaurantManager() {
               <Card className="bg-blue-50 border-blue-200">
                 <CardContent className="pt-4 space-y-2">
                   <p className="font-semibold">Order Summary:</p>
-                  {selectedItems.map((item, idx) => (
-                    <div key={idx} className="flex justify-between text-sm">
-                      <span>{item.quantity}x {item.name}</span>
-                      <span>NPR {(item.price * item.quantity).toFixed(2)}</span>
+                  {selectedItems.map((item) => (
+                    <div key={item.menuItemId} className="flex items-center justify-between text-sm gap-2">
+                      <span className="flex-1">{item.name}</span>
+                      <div className="flex items-center gap-1">
+                        <Button type="button" size="icon" variant="outline" className="h-7 w-7" onClick={() => changeSelectedQuantity(item.menuItemId, -1)}>
+                          <Minus className="w-3 h-3" />
+                        </Button>
+                        <span className="w-6 text-center">{item.quantity}</span>
+                        <Button type="button" size="icon" variant="outline" className="h-7 w-7" onClick={() => changeSelectedQuantity(item.menuItemId, 1)}>
+                          <Plus className="w-3 h-3" />
+                        </Button>
+                      </div>
+                      <span className="w-28 text-right">NPR {(item.price * item.quantity).toFixed(2)}</span>
                     </div>
                   ))}
-                  <div className="border-t border-blue-300 pt-2 mt-2">
+                  <div className="border-t border-blue-300 pt-2 mt-2 space-y-1">
                     <div className="flex justify-between text-sm">
                       <span>Inclusive subtotal:</span>
-                      <span>NPR {selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0).toFixed(2)}</span>
-                    </div>
-                    
-                    {/* Discount */}
-                    <div className="space-y-2 mt-2 p-2 bg-white rounded">
-                      <div className="flex justify-between items-center text-sm">
-                        <span>Discount:</span>
-                        <Select
-                          value={discountType}
-                          onValueChange={(value: "percentage" | "amount") => setDiscountType(value)}
-                        >
-                          <SelectTrigger className="w-32 h-8">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="percentage">Percentage %</SelectItem>
-                            <SelectItem value="amount">Amount NPR</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="flex justify-between items-center text-sm">
-                        <span>Discount Value:</span>
-                        <div className="flex items-center gap-2">
-                          <Input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={discountValue}
-                            onChange={(e) => setDiscountValue(parseFloat(e.target.value) || 0)}
-                            className="w-24 h-8"
-                          />
-                          <span>{discountType === "percentage" ? "%" : "NPR"}</span>
-                        </div>
-                      </div>
-                      {discountValue > 0 && (
-                        <div className="flex justify-between text-sm text-green-700">
-                          <span>Discount (on exclusive):</span>
-                          <span>
-                            - NPR {calculateInclusiveVat({
-                              inclusiveSubtotal: selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0),
-                              vatPercent: taxPercentage,
-                              discountType,
-                              discountValue
-                            }).discountAmount.toFixed(2)}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className="flex justify-between text-sm items-center mt-2">
-                      <span>VAT:</span>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          name="taxPercentage"
-                          type="number"
-                          step="0.01"
-                          value={taxPercentage}
-                          onChange={(e) => setTaxPercentage(parseFloat(e.target.value) || 0)}
-                          className="w-20 h-8"
-                        />
-                        <span>% incl.</span>
-                      </div>
+                      <span>NPR {orderTotals.inclusiveSubtotal.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-sm text-gray-600">
-                      <span>Exclusive amt:</span>
-                      <span>
-                        NPR {calculateInclusiveVat({
-                          inclusiveSubtotal: selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0),
-                          vatPercent: taxPercentage,
-                          discountType,
-                          discountValue
-                        }).discountedExclusive.toFixed(2)}
-                      </span>
+                      <span>Exclusive Amount:</span>
+                      <span>NPR {orderTotals.exclusiveAmount.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-sm text-gray-600">
                       <span>VAT amount:</span>
-                      <span>
-                        NPR {calculateInclusiveVat({
-                          inclusiveSubtotal: selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0),
-                          vatPercent: taxPercentage,
-                          discountType,
-                          discountValue
-                        }).vatAmount.toFixed(2)}
-                      </span>
+                      <span>NPR {orderTotals.vatAmount.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between font-bold text-lg pt-2 border-t border-blue-300">
                       <span>Total:</span>
                       <span className="text-primary">
-                        NPR {calculateInclusiveVat({
-                          inclusiveSubtotal: selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0),
-                          vatPercent: taxPercentage,
-                          discountType,
-                          discountValue
-                        }).total.toFixed(2)}
+                        NPR {orderTotals.total.toFixed(2)}
                       </span>
                     </div>
                   </div>

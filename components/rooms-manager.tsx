@@ -4,21 +4,25 @@ import { useState, useEffect } from "react"
 import { Trash2, Edit, Plus, X, Upload, Image as ImageIcon } from "lucide-react"
 import { convertImageToBase64, type Room } from "@/lib/storage"
 import { fetchRooms, createRoom, updateRoom as updateRoomAPI, deleteRoom as deleteRoomAPI } from "@/lib/api"
+import { CURRENCIES, STANDARD_ROOM_TYPES, currencySymbol } from "@/lib/hotel"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { AdminSearch, matchesSearch } from "@/components/admin-search"
 
 export default function RoomsManager() {
   const [rooms, setRooms] = useState<Room[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingRoom, setEditingRoom] = useState<Room | null>(null)
   const [imagePreview, setImagePreview] = useState<string>("")
+  const [searchQuery, setSearchQuery] = useState("")
   const [formData, setFormData] = useState({
     name: "",
     price: "",
+    currency: "NPR",
     description: "",
     capacity: "2",
     status: "Available" as "Available" | "Booked",
@@ -48,6 +52,7 @@ export default function RoomsManager() {
       setFormData({
         name: room.name,
         price: room.price,
+        currency: room.currency || "NPR",
         description: room.description,
         capacity: room.capacity.toString(),
         status: room.status,
@@ -62,6 +67,7 @@ export default function RoomsManager() {
       setFormData({
         name: "",
         price: "",
+        currency: "NPR",
         description: "",
         capacity: "2",
         status: "Available",
@@ -103,6 +109,7 @@ export default function RoomsManager() {
     const roomData = {
       name: formData.name,
       price: formData.price,
+      currency: formData.currency,
       description: formData.description,
       capacity: parseInt(formData.capacity),
       status: formData.status,
@@ -124,7 +131,7 @@ export default function RoomsManager() {
       setEditingRoom(null)
     } catch (error) {
       console.error('Error saving room:', error)
-      alert('Failed to save room')
+      alert(error instanceof Error ? error.message : 'Failed to save room')
     }
   }
 
@@ -150,8 +157,14 @@ export default function RoomsManager() {
         </Button>
       </div>
 
+      <AdminSearch
+        value={searchQuery}
+        onChange={setSearchQuery}
+        placeholder="Search room types..."
+      />
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {rooms.map((room) => (
+        {rooms.filter((room) => matchesSearch(searchQuery, room.name, room.description, room.status, ...(room.features || []), ...(room.roomNumbers || []))).map((room) => (
           <div key={room.id} className="bg-white rounded-lg shadow overflow-hidden">
             <div className="relative h-48 bg-gray-100">
               <img
@@ -176,7 +189,7 @@ export default function RoomsManager() {
             </div>
               <p className="text-sm text-gray-600 mb-4 line-clamp-2">{room.description}</p>
             <div className="flex justify-between items-center border-t pt-4">
-                <p className="text-2xl font-bold text-primary">${room.price}</p>
+                <p className="text-2xl font-bold text-primary">{currencySymbol(room.currency)} {room.price}</p>
               <div className="flex gap-2">
                   <button
                     onClick={() => handleOpenDialog(room)}
@@ -196,6 +209,9 @@ export default function RoomsManager() {
           </div>
         ))}
       </div>
+      {rooms.length > 0 && rooms.filter((room) => matchesSearch(searchQuery, room.name, room.description, room.status, ...(room.features || []), ...(room.roomNumbers || []))).length === 0 && (
+        <p className="text-center text-gray-500 py-6">No room types match “{searchQuery}”.</p>
+      )}
 
       {/* Add/Edit Room Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -259,24 +275,58 @@ export default function RoomsManager() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="name">Room Name *</Label>
+                <Label htmlFor="name">Room type *</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {STANDARD_ROOM_TYPES.map((type) => (
+                    <button
+                      key={type.name}
+                      type="button"
+                      onClick={() => setFormData({
+                        ...formData,
+                        name: type.name,
+                        capacity: String(type.capacity),
+                        description: formData.description || type.description,
+                        features: formData.features || type.features.join(", "),
+                      })}
+                      className={`rounded-full border px-2.5 py-1 text-xs font-medium ${
+                        formData.name === type.name ? "bg-green-700 text-white border-green-700" : "bg-white text-gray-700"
+                      }`}
+                    >
+                      {type.name}
+                    </button>
+                  ))}
+                </div>
                 <Input
                   id="name"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="Standard Room or Deluxe Room"
                   required
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="price">Price (per night) *</Label>
-                <div className="flex items-center">
-                  <span className="px-3 py-2 bg-gray-100 border border-r-0 rounded-l-md">$</span>
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={formData.currency}
+                    onValueChange={(value) => setFormData({ ...formData, currency: value })}
+                  >
+                    <SelectTrigger className="w-24 shrink-0">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CURRENCIES.map((currency) => (
+                        <SelectItem key={currency.value} value={currency.value}>
+                          {currency.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Input
                     id="price"
                     type="number"
                     value={formData.price}
                     onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                    className="rounded-l-none"
                     required
                   />
                 </div>

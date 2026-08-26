@@ -4,8 +4,10 @@ import { useState, useEffect } from "react"
 import { Building2, BedDouble, Users, AlertCircle, CheckCircle, Clock, Wrench, Sparkles, Calendar } from "lucide-react"
 import { type Room, type Booking } from "@/lib/storage"
 import { fetchRooms, fetchBookings, fetchRoomInventory } from "@/lib/api"
+import { currencySymbol } from "@/lib/hotel"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { AdminSearch, matchesSearch } from "@/components/admin-search"
 
 type RoomStatus = "available" | "occupied" | "checkout-today" | "checkin-today" | "maintenance" | "cleaning"
 
@@ -26,6 +28,7 @@ export default function RoomStatusDashboard() {
   const [selectedRoom, setSelectedRoom] = useState<RoomDetail | null>(null)
   const [dataIssues, setDataIssues] = useState<string[]>([])
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split("T")[0])
+  const [searchQuery, setSearchQuery] = useState("")
 
   useEffect(() => {
     loadData()
@@ -324,7 +327,13 @@ export default function RoomStatusDashboard() {
             {isToday ? "Live Status • Today" : "Historical/Future View"}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+          <AdminSearch
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search rooms or guests..."
+            className="sm:w-64"
+          />
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
             <label htmlFor="viewDate" className="text-sm font-medium text-gray-700 whitespace-nowrap">
               View Date:
@@ -514,7 +523,10 @@ export default function RoomStatusDashboard() {
 
       {/* Room Grid by Type */}
       {rooms.map((room) => {
-        const roomsOfType = roomDetails.filter((r) => r.roomTypeId === room.id)
+        const roomsOfType = roomDetails.filter((r) =>
+          r.roomTypeId === room.id &&
+          matchesSearch(searchQuery, r.roomNumber, r.roomType, r.status, r.booking?.guest)
+        )
         if (roomsOfType.length === 0) return null
 
         return (
@@ -654,7 +666,7 @@ export default function RoomStatusDashboard() {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-sm text-gray-600">Total:</span>
-                        <span className="font-bold text-primary">${currentBooking.price}</span>
+                        <span className="font-bold text-primary">{currencySymbol(currentBooking.currency)} {currentBooking.price}</span>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-gray-600">Status:</span>
@@ -698,7 +710,7 @@ export default function RoomStatusDashboard() {
                             {new Date(booking.checkout).toLocaleDateString()}
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-gray-600">${booking.price}</span>
+                            <span className="text-gray-600">{currencySymbol(booking.currency)} {booking.price}</span>
                             <span className="text-gray-600 text-xs">
                               {booking.bookingSource || "phone"}
                             </span>

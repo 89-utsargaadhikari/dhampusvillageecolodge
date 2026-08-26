@@ -5,6 +5,7 @@ export interface Room {
   id: number
   name: string
   price: string
+  currency?: string // NPR | USD | INR (defaults to NPR)
   image: string
   description: string
   features: string[]

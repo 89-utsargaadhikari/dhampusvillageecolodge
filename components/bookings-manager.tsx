@@ -1,335 +1,431 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Trash2, Edit, Plus, CheckCircle } from "lucide-react"
+import { useState, useEffect, Fragment } from "react"
+import { Trash2, Edit, Plus, X, ChevronDown } from "lucide-react"
 import { type Booking } from "@/lib/storage"
-import { 
-  fetchBookings, 
-  createBooking, 
-  updateBooking as updateBookingAPI, 
+import {
+  fetchBookings,
+  createBooking,
+  updateBooking as updateBookingAPI,
   deleteBooking as deleteBookingAPI,
   fetchRooms,
   fetchRoomInventory,
   fetchBusinesses
 } from "@/lib/api"
-import { BOOKING_SOURCES, CURRENCIES, MEAL_PLANS, OCCUPANCY_TYPES, currencySymbol, mealPlanLabel } from "@/lib/hotel"
+import { BOOKING_SOURCES, BOOKING_STATUSES, CURRENCIES, MEAL_PLANS, OCCUPANCY_TYPES, currencySymbol, defaultOccupancyForRoomType, formatMoney, picklistRoomTypes, stayNightsAndDays } from "@/lib/hotel"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { AdminSearch, matchesSearch } from "@/components/admin-search"
+
+type RoomLine = {
+  id?: number
+  room: string
+  roomNumber: string
+  occupancy: string
+  numberOfGuests: string
+  extraBed: boolean
+  price: string
+}
+
+type BookingGroup = {
+  key: string
+  groupId: string | null
+  members: Booking[]
+}
+
+function emptyRoomLine(room = ""): RoomLine {
+  return {
+    room,
+    roomNumber: "",
+    occupancy: "DBL",
+    numberOfGuests: "1",
+    extraBed: false,
+    price: "",
+  }
+}
+
+function datesOverlap(checkin: Date, checkout: Date, bookingCheckin: string, bookingCheckout: string) {
+  const start = new Date(bookingCheckin)
+  const end = new Date(bookingCheckout)
+  start.setHours(0, 0, 0, 0)
+  end.setHours(0, 0, 0, 0)
+  return checkin < end && checkout > start
+}
+
+function groupBookings(bookings: Booking[]): BookingGroup[] {
+  const seen = new Set<string>()
+  const groups: BookingGroup[] = []
+
+  for (const booking of bookings) {
+    if (booking.groupId) {
+      if (seen.has(booking.groupId)) continue
+      seen.add(booking.groupId)
+      groups.push({
+        key: booking.groupId,
+        groupId: booking.groupId,
+        members: bookings.filter((item) => item.groupId === booking.groupId),
+      })
+    } else {
+      groups.push({
+        key: `single-${booking.id}`,
+        groupId: null,
+        members: [booking],
+      })
+    }
+  }
+
+  return groups
+}
+
+function guestLabel(guest?: string | null) {
+  const name = guest?.trim()
+  return name || "Unnamed guest"
+}
+
+function contactLabel(booking: Booking) {
+  const raw = booking.phone?.trim() || booking.email?.trim() || ""
+  if (!raw || /^(no|n\/a|na|none|null|-)$/i.test(raw)) return ""
+  return raw
+}
+
+function sourceLabel(value?: string | null) {
+  return BOOKING_SOURCES.find((item) => item.value === value)?.label || value || "—"
+}
+
+function mealPlanCode(code?: string | null) {
+  if (!code) return "EP"
+  if (code === "bed_only") return "EP"
+  if (code === "bed_breakfast") return "BB"
+  return code
+}
+
+function formatDateShort(value?: string | null) {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+}
+
+function formatStayRange(checkin?: string | null, checkout?: string | null) {
+  const start = formatDateShort(checkin)
+  const end = formatDateShort(checkout)
+  if (!start && !end) return "Dates TBD"
+  if (start && end) return `${start} → ${end}`
+  return start || end || "Dates TBD"
+}
+
+function summarizeRooms(members: Booking[]) {
+  const buckets = new Map<string, number>()
+  for (const member of members) {
+    const type = member.room?.trim() || "Room"
+    const occ = member.occupancy || ""
+    const key = occ ? `${type} · ${occ}` : type
+    buckets.set(key, (buckets.get(key) || 0) + 1)
+  }
+  const summary = [...buckets.entries()].map(([label, count]) => (count > 1 ? `${count} × ${label}` : label))
+  const assigned = members.map((member) => member.roomNumber).filter(Boolean) as string[]
+  return { summary, assigned, unassigned: members.length - assigned.length }
+}
+
+function statusTone(status?: string) {
+  if (status === "Checked In") return "bg-emerald-50 text-emerald-800 ring-emerald-100"
+  if (status === "Checked Out") return "bg-slate-100 text-slate-700 ring-slate-200"
+  if (status === "Cancelled") return "bg-red-50 text-red-700 ring-red-100"
+  if (status === "Confirmed") return "bg-green-50 text-green-700 ring-green-100"
+  return "bg-amber-50 text-amber-800 ring-amber-100"
+}
 
 export default function BookingsManager() {
   const [bookings, setBookings] = useState<Booking[]>([])
-  const [rooms, setRooms] = useState<string[]>([])
-  const [availableRoomNumbers, setAvailableRoomNumbers] = useState<string[]>([])
+  const [rooms, setRooms] = useState<any[]>([])
+  const [inventory, setInventory] = useState<any[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isRoomAssignDialogOpen, setIsRoomAssignDialogOpen] = useState(false)
-  const [editingBooking, setEditingBooking] = useState<Booking | null>(null)
-  const [pendingStatusChange, setPendingStatusChange] = useState<{ id: number; status: "Confirmed" | "Pending" | "Cancelled" | "Checked In" | "Checked Out" } | null>(null)
+  const [editingMembers, setEditingMembers] = useState<Booking[]>([])
+  const [pendingStatusChange, setPendingStatusChange] = useState<{ status: "Pending" | "Cancelled" | "Checked In" | "Checked Out" } | null>(null)
+  const [checkInAssignments, setCheckInAssignments] = useState<Record<number, string>>({})
   const emptyForm = {
     guest: "",
     email: "",
     phone: "",
-    room: "",
-    roomNumber: "",
     checkin: "",
     checkout: "",
-    price: "",
-    status: "Pending" as "Confirmed" | "Pending" | "Cancelled" | "Checked In" | "Checked Out",
+    status: "Pending" as "Pending" | "Cancelled" | "Checked In" | "Checked Out",
     bookingSource: "phone",
     businessId: "",
-    numberOfGuests: "1",
     bookingType: "EP",
-    occupancy: "DBL",
     currency: "NPR",
-    extraBed: false,
+    rooms: [emptyRoomLine()],
   }
   const [formData, setFormData] = useState(emptyForm)
   const [businesses, setBusinesses] = useState<any[]>([])
-  const [quickRoomAssign, setQuickRoomAssign] = useState("")
+  const [statusFilter, setStatusFilter] = useState("all")
+  const [searchQuery, setSearchQuery] = useState("")
+  const [partnerSearch, setPartnerSearch] = useState("")
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set())
+
+  const bookingGroups = groupBookings(bookings)
+  const visibleGroups = bookingGroups.filter((group) => {
+    if (statusFilter !== "all" && group.members[0]?.status !== statusFilter) return false
+    return group.members.some((member) =>
+      matchesSearch(
+        searchQuery,
+        member.guest,
+        member.email,
+        member.phone,
+        member.room,
+        member.roomNumber,
+        member.bookingSource,
+        member.bookingType,
+        member.status,
+        member.occupancy,
+        member.business?.name,
+        businesses.find((b: any) => b.id === member.businessId)?.name
+      )
+    )
+  })
 
   useEffect(() => {
     loadData()
   }, [])
-  
+
   const loadData = async () => {
     try {
-      const [bookingsData, roomsData, businessesData] = await Promise.all([
+      const [bookingsData, roomsData, businessesData, inventoryData] = await Promise.all([
         fetchBookings(),
         fetchRooms(),
-        fetchBusinesses().catch(() => [])
+        fetchBusinesses().catch(() => []),
+        fetchRoomInventory().catch(() => []),
       ])
       setBookings(bookingsData)
+      setRooms(roomsData)
+      setInventory(inventoryData || [])
       setBusinesses((businessesData || []).filter((b: any) => b.active !== false))
-      const roomList = roomsData.map((r: any) => r.name)
-      setRooms(roomList)
-      
-      // REMOVED: Don't create notifications here - they're created when booking is submitted
     } catch (error) {
       console.error('Failed to load bookings data:', error)
       alert('Failed to load bookings data')
     }
   }
 
-  // Update available room numbers when room changes
-  useEffect(() => {
-    if (formData.room) {
-      loadAvailableRooms()
-    } else {
-      setAvailableRoomNumbers([])
-    }
-  }, [formData.room, formData.checkin, formData.checkout, editingBooking])
-  
-  const loadAvailableRooms = async () => {
-    try {
-      const [roomsData, inventoryData, bookingsData] = await Promise.all([
-        fetchRooms(),
-        fetchRoomInventory(),
-        fetchBookings()
-      ])
-      
-      const selectedRoom = roomsData.find((r: any) => r.name === formData.room)
-      if (!selectedRoom) return
-      
-      // Get all room numbers for this room type
-      const roomNumbersForType = inventoryData
-        .filter((inv: any) => inv.roomTypeId === selectedRoom.id)
-        .map((inv: any) => inv.roomNumber)
-      
-      // Filter out occupied rooms for the selected dates
-      const checkin = new Date(formData.checkin)
-      const checkout = new Date(formData.checkout)
-      
-      const available = roomNumbersForType.filter((roomNum: string) => {
-        // Check if this room number has conflicting bookings
-        const hasConflict = bookingsData.some((booking: any) => {
-          if (editingBooking && booking.id === editingBooking.id) return false
-          if (booking.status === "Cancelled" || booking.status === "Checked Out") return false
-          if (booking.roomNumber !== roomNum) return false
-          
-          const bookingCheckin = new Date(booking.checkin)
-          const bookingCheckout = new Date(booking.checkout)
-          
-          return checkin < bookingCheckout && checkout > bookingCheckin
-        })
-        
-        return !hasConflict
-      })
-      
-      setAvailableRoomNumbers(available)
-    } catch (error) {
-      console.error('Failed to load available rooms:', error)
-    }
+  const updateRoomLine = (index: number, patch: Partial<RoomLine>) => {
+    setFormData((prev) => {
+      const nextRooms = [...prev.rooms]
+      nextRooms[index] = { ...nextRooms[index], ...patch }
+      return { ...prev, rooms: nextRooms }
+    })
   }
 
-  // Update available room numbers when quick assign dialog opens
-  useEffect(() => {
-    if (isRoomAssignDialogOpen && editingBooking) {
-      loadAvailableRoomsForQuickAssign()
-    }
-  }, [isRoomAssignDialogOpen, editingBooking])
-  
-  const loadAvailableRoomsForQuickAssign = async () => {
-    if (!editingBooking) return
-    
-    try {
-      const [roomsData, inventoryData, bookingsData] = await Promise.all([
-        fetchRooms(),
-        fetchRoomInventory(),
-        fetchBookings()
-      ])
-      
-      const selectedRoom = roomsData.find((r: any) => r.name === editingBooking.room)
-      if (!selectedRoom) return
-      
-      // Get all room numbers for this room type
-      const roomNumbersForType = inventoryData
-        .filter((inv: any) => inv.roomTypeId === selectedRoom.id)
-        .map((inv: any) => inv.roomNumber)
-      
-      // Filter out occupied rooms for the selected dates
-      const checkin = new Date(editingBooking.checkin)
-      const checkout = new Date(editingBooking.checkout)
-      
-      const available = roomNumbersForType.filter((roomNum: string) => {
-        const hasConflict = bookingsData.some((booking: any) => {
-          if (booking.id === editingBooking.id) return false
-          if (booking.status === "Cancelled" || booking.status === "Checked Out") return false
-          if (booking.roomNumber !== roomNum) return false
-          
-          const bookingCheckin = new Date(booking.checkin)
-          const bookingCheckout = new Date(booking.checkout)
-          
-          return checkin < bookingCheckout && checkout > bookingCheckin
-        })
-        
-        return !hasConflict
-      })
-      
-      setAvailableRoomNumbers(available)
-    } catch (error) {
-      console.error('Failed to load available rooms for quick assign:', error)
-    }
+  const addRoomLine = () => {
+    setFormData((prev) => ({
+      ...prev,
+      rooms: [...prev.rooms, emptyRoomLine(prev.rooms[0]?.room || rooms[0]?.name || "")],
+    }))
+  }
+
+  const setRoomCount = (value: string) => {
+    const count = Math.max(1, parseInt(value) || 1)
+    setFormData((prev) => {
+      const lines = [...prev.rooms]
+      while (lines.length < count) {
+        lines.push(emptyRoomLine(lines[0]?.room || rooms[0]?.name || ""))
+      }
+      return { ...prev, rooms: lines.slice(0, count) }
+    })
+  }
+
+  const removeRoomLine = (index: number) => {
+    if (formData.rooms.length === 1) return
+    setFormData((prev) => ({
+      ...prev,
+      rooms: prev.rooms.filter((_, i) => i !== index),
+    }))
   }
 
   const handleOpenDialog = (booking?: Booking) => {
     if (booking) {
-      setEditingBooking(booking)
+      const members = booking.groupId
+        ? bookings.filter((item) => item.groupId === booking.groupId)
+        : [booking]
+      const primary = members[0]
+      setEditingMembers(members)
       setFormData({
-        guest: booking.guest,
-        email: booking.email || "",
-        phone: booking.phone || "",
-        room: booking.room,
-        roomNumber: booking.roomNumber || "",
-        checkin: booking.checkin,
-        checkout: booking.checkout,
-        price: booking.price,
-        status: booking.status,
-        bookingSource: booking.bookingSource || "phone",
-        businessId: booking.businessId ? String(booking.businessId) : "",
-        numberOfGuests: String(booking.numberOfGuests || 1),
-        bookingType: booking.bookingType === "bed_only" ? "EP" : booking.bookingType === "bed_breakfast" ? "BB" : (booking.bookingType || "EP"),
-        occupancy: booking.occupancy || "DBL",
-        currency: booking.currency || "NPR",
-        extraBed: Boolean(booking.extraBed),
+        guest: primary.guest,
+        email: primary.email || "",
+        phone: primary.phone || "",
+        checkin: primary.checkin,
+        checkout: primary.checkout,
+        status: (primary.status === "Confirmed" ? "Pending" : primary.status) as typeof emptyForm.status,
+        bookingSource: primary.bookingSource || "phone",
+        businessId: primary.businessId ? String(primary.businessId) : "",
+        bookingType: primary.bookingType === "bed_only" ? "EP" : primary.bookingType === "bed_breakfast" ? "BB" : (primary.bookingType || "EP"),
+        currency: primary.currency || "NPR",
+        rooms: members.map((member) => ({
+          id: member.id,
+          room: member.room,
+          roomNumber: member.roomNumber || "",
+          occupancy: member.occupancy || "DBL",
+          numberOfGuests: String(member.numberOfGuests || 1),
+          extraBed: Boolean(member.extraBed),
+          price: member.price || "",
+        })),
       })
     } else {
-      setEditingBooking(null)
+      setEditingMembers([])
       setFormData({
         ...emptyForm,
-        room: rooms[0] || "",
+        rooms: [emptyRoomLine(rooms[0]?.name || "")],
       })
     }
     setIsDialogOpen(true)
   }
 
+  const sharedBookingFields = () => ({
+    guest: formData.guest,
+    email: formData.email,
+    phone: formData.phone,
+    checkin: formData.checkin,
+    checkout: formData.checkout,
+    status: formData.status,
+    bookingSource: formData.bookingSource,
+    businessId: formData.businessId || null,
+    bookingType: formData.bookingType,
+    currency: formData.currency,
+  })
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    // Validate dates
-    const checkinDate = new Date(formData.checkin)
-    const checkoutDate = new Date(formData.checkout)
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    checkinDate.setHours(0, 0, 0, 0)
-    checkoutDate.setHours(0, 0, 0, 0)
+    const checkinDate = formData.checkin ? new Date(formData.checkin) : null
+    const checkoutDate = formData.checkout ? new Date(formData.checkout) : null
+    if (checkinDate) checkinDate.setHours(0, 0, 0, 0)
+    if (checkoutDate) checkoutDate.setHours(0, 0, 0, 0)
 
-    // Check if checkout is after checkin
-    if (checkoutDate <= checkinDate) {
-      alert("⚠️ Check-out date must be after check-in date!")
+    const assignedNumbers = formData.rooms.map((line) => line.roomNumber).filter(Boolean)
+    if (new Set(assignedNumbers).size !== assignedNumbers.length) {
+      alert("The same room number cannot be assigned twice in one booking.")
       return
     }
 
-    // Check if dates are in the past (only for new bookings)
-    if (!editingBooking && checkinDate < today) {
-      alert("⚠️ Check-in date cannot be in the past!")
-      return
-    }
+    const editingIds = new Set(formData.rooms.map((line) => line.id).filter(Boolean) as number[])
 
-    // Calculate minimum 1 night stay
-    const nights = Math.ceil((checkoutDate.getTime() - checkinDate.getTime()) / (1000 * 60 * 60 * 24))
-    if (nights < 1) {
-      alert("⚠️ Minimum stay is 1 night!")
-      return
-    }
-
-    // Validate room number if status is Confirmed
-    if (formData.status === "Confirmed" && !formData.roomNumber) {
-      alert("⚠️ Please assign a room number before confirming the booking!")
-      return
-    }
-
-    // Check for room conflicts if room number is assigned
-    if (formData.roomNumber) {
-      const conflictingBooking = bookings.find((b) => {
-        if (b.id === editingBooking?.id) return false // Skip current booking
-        if (!b.roomNumber || b.roomNumber !== formData.roomNumber) return false
-        if (b.status === "Cancelled" || b.status === "Checked Out") return false
-
-        // Check date overlap
-        const bCheckin = new Date(b.checkin)
-        const bCheckout = new Date(b.checkout)
-        bCheckin.setHours(0, 0, 0, 0)
-        bCheckout.setHours(0, 0, 0, 0)
-
-        return (
-          (checkinDate >= bCheckin && checkinDate < bCheckout) ||
-          (checkoutDate > bCheckin && checkoutDate <= bCheckout) ||
-          (checkinDate <= bCheckin && checkoutDate >= bCheckout)
-        )
-      })
-
-      if (conflictingBooking) {
-        alert(
-          `⚠️ Room ${formData.roomNumber} is already booked from ${conflictingBooking.checkin} to ${conflictingBooking.checkout}!\n\nGuest: ${conflictingBooking.guest}\nPlease select a different room or change the dates.`
-        )
-        return
+    if (checkinDate && checkoutDate) {
+      for (const line of formData.rooms) {
+        if (!line.roomNumber) continue
+        const conflictingBooking = bookings.find((booking) => {
+          if (editingIds.has(booking.id)) return false
+          if (!booking.roomNumber || booking.roomNumber !== line.roomNumber) return false
+          if (booking.status === "Cancelled" || booking.status === "Checked Out") return false
+          return datesOverlap(checkinDate, checkoutDate, booking.checkin, booking.checkout)
+        })
+        if (conflictingBooking) {
+          alert(
+            `Room ${line.roomNumber} is already booked from ${conflictingBooking.checkin} to ${conflictingBooking.checkout}. Guest: ${conflictingBooking.guest}`
+          )
+          return
+        }
       }
     }
 
-    const bookingData = {
-      guest: formData.guest,
-      email: formData.email,
-      phone: formData.phone,
-      room: formData.room,
-      roomNumber: formData.roomNumber,
-      checkin: formData.checkin,
-      checkout: formData.checkout,
-      price: formData.price || "0",
-      status: formData.status,
-      bookingSource: formData.bookingSource,
-      businessId: formData.businessId || null,
-      numberOfGuests: formData.numberOfGuests,
-      bookingType: formData.bookingType,
-      occupancy: formData.occupancy,
-      currency: formData.currency,
-      extraBed: formData.extraBed,
-    }
+    const groupId = formData.rooms.length > 1
+      ? (editingMembers.find((member) => member.groupId)?.groupId || `GRP-${Date.now()}`)
+      : null
+
+    const roomPayloads = formData.rooms.map((line) => ({
+      id: line.id,
+      room: line.room,
+      roomNumber: line.roomNumber || null,
+      occupancy: line.occupancy,
+      numberOfGuests: line.numberOfGuests,
+      extraBed: line.extraBed,
+      price: line.price || "0",
+    }))
 
     try {
-      if (editingBooking) {
-        await updateBookingAPI(editingBooking.id, bookingData)
+      if (editingMembers.length > 0) {
+        const remainingIds = new Set(roomPayloads.map((line) => line.id).filter(Boolean) as number[])
+        const removedIds = editingMembers.map((member) => member.id).filter((id) => !remainingIds.has(id))
+
+        for (const line of roomPayloads) {
+          const payload = {
+            ...sharedBookingFields(),
+            room: line.room,
+            roomNumber: line.roomNumber,
+            occupancy: line.occupancy,
+            numberOfGuests: line.numberOfGuests,
+            extraBed: line.extraBed,
+            price: line.price,
+            groupId,
+          }
+          if (line.id) {
+            await updateBookingAPI(line.id, payload)
+          } else {
+            await createBooking(payload)
+          }
+        }
+
+        for (const id of removedIds) {
+          await deleteBookingAPI(id)
+        }
       } else {
-        await createBooking(bookingData)
+        await createBooking({
+          ...sharedBookingFields(),
+          groupId,
+          rooms: roomPayloads,
+        })
       }
 
       await loadData()
       setIsDialogOpen(false)
-      setEditingBooking(null)
+      setEditingMembers([])
     } catch (error) {
       console.error('Failed to save booking:', error)
-      alert('Failed to save booking')
+      alert(error instanceof Error ? error.message : 'Failed to save booking')
     }
   }
 
-  const handleDelete = async (id: number) => {
-    if (confirm("Are you sure you want to delete this booking?")) {
-      try {
-        await deleteBookingAPI(id)
-        await loadData()
-      } catch (error) {
-        console.error('Failed to delete booking:', error)
-        alert('Failed to delete booking')
+  const handleDelete = async (group: BookingGroup) => {
+    const count = group.members.length
+    const message = count > 1
+      ? `Delete this booking and all ${count} rooms?`
+      : "Are you sure you want to delete this booking?"
+
+    if (!confirm(message)) return
+
+    try {
+      for (const member of group.members) {
+        await deleteBookingAPI(member.id)
       }
+      await loadData()
+    } catch (error) {
+      console.error('Failed to delete booking:', error)
+      alert('Failed to delete booking')
     }
   }
 
-  const handleStatusChange = async (id: number, status: "Confirmed" | "Pending" | "Cancelled" | "Checked In" | "Checked Out") => {
-    // If confirming, check if room number is assigned
-    if (status === "Confirmed") {
-      const booking = bookings.find((b) => b.id === id)
-      if (booking && !booking.roomNumber) {
-        // Set states - useEffect will handle loading room numbers
-        setPendingStatusChange({ id, status })
-        setEditingBooking(booking)
+  const handleStatusChange = async (
+    group: BookingGroup,
+    status: "Pending" | "Cancelled" | "Checked In" | "Checked Out" | "Confirmed"
+  ) => {
+    if (status === "Checked In") {
+      const missing = group.members.filter((member) => !member.roomNumber)
+      if (missing.length > 0) {
+        const initial: Record<number, string> = {}
+        group.members.forEach((member) => {
+          initial[member.id] = member.roomNumber || ""
+        })
+        setCheckInAssignments(initial)
+        setPendingStatusChange({ status })
+        setEditingMembers(group.members)
         setIsRoomAssignDialogOpen(true)
         return
       }
     }
-    
+
     try {
-      await updateBookingAPI(id, { status })
+      await Promise.all(group.members.map((member) => updateBookingAPI(member.id, { status })))
       await loadData()
     } catch (error) {
       console.error('Failed to update booking status:', error)
@@ -337,231 +433,355 @@ export default function BookingsManager() {
     }
   }
 
-  const handleQuickRoomAssign = async () => {
-    if (!quickRoomAssign || !pendingStatusChange || !editingBooking) return
-    
-    try {
-      // Assign room number and update status
-      await updateBookingAPI(pendingStatusChange.id, {
-        roomNumber: quickRoomAssign,
-        status: pendingStatusChange.status,
+  const getAvailableForCheckIn = (member: Booking) => {
+    const selectedRoom = rooms.find((r: any) => r.name === member.room)
+    const numbersForType = selectedRoom
+      ? inventory.filter((inv: any) => inv.roomTypeId === selectedRoom.id).map((inv: any) => inv.roomNumber as string)
+      : inventory.map((inv: any) => inv.roomNumber as string)
+
+    const taken = new Set(
+      Object.entries(checkInAssignments)
+        .filter(([id, value]) => Number(id) !== member.id && value)
+        .map(([, value]) => value)
+    )
+
+    const checkin = member.checkin ? new Date(member.checkin) : null
+    const checkout = member.checkout ? new Date(member.checkout) : null
+    if (checkin) checkin.setHours(0, 0, 0, 0)
+    if (checkout) checkout.setHours(0, 0, 0, 0)
+
+    return numbersForType.filter((roomNum) => {
+      if (taken.has(roomNum)) return false
+      if (!checkin || !checkout) return true
+      return !bookings.some((booking) => {
+        if (booking.id === member.id) return false
+        if (booking.status === "Cancelled" || booking.status === "Checked Out") return false
+        if (booking.roomNumber !== roomNum) return false
+        return datesOverlap(checkin, checkout, booking.checkin, booking.checkout)
       })
-      
+    })
+  }
+
+  const handleQuickRoomAssign = async () => {
+    if (!pendingStatusChange || editingMembers.length === 0) return
+    const missing = editingMembers.filter((member) => !checkInAssignments[member.id])
+    if (missing.length > 0) {
+      alert("Assign a room number to every room before check-in.")
+      return
+    }
+
+    try {
+      await Promise.all(
+        editingMembers.map((member) =>
+          updateBookingAPI(member.id, {
+            roomNumber: checkInAssignments[member.id],
+            status: pendingStatusChange.status,
+          })
+        )
+      )
       await loadData()
       setIsRoomAssignDialogOpen(false)
       setPendingStatusChange(null)
-      setEditingBooking(null)
-      setQuickRoomAssign("")
+      setEditingMembers([])
+      setCheckInAssignments({})
     } catch (error) {
       console.error('Failed to assign room:', error)
       alert('Failed to assign room')
     }
   }
 
+  const toggleExpanded = (key: string) => {
+    setExpandedKeys((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  const renderStatusSelect = (group: BookingGroup, className?: string) => {
+    const status = group.members[0]?.status
+    return (
+      <Select
+        value={status}
+        onValueChange={(value) =>
+          handleStatusChange(group, value as "Confirmed" | "Pending" | "Cancelled" | "Checked In" | "Checked Out")
+        }
+      >
+        <SelectTrigger className={className || "h-8 w-[132px] border-0 bg-transparent shadow-none px-0 focus:ring-0"}>
+          <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${statusTone(status)}`}>
+            {status}
+          </span>
+        </SelectTrigger>
+        <SelectContent>
+          {BOOKING_STATUSES.map((item) => (
+            <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+          ))}
+          {status === "Confirmed" && <SelectItem value="Confirmed">Confirmed</SelectItem>}
+        </SelectContent>
+      </Select>
+    )
+  }
+
+  const totalPax = (members: Booking[]) =>
+    members.reduce((sum, member) => sum + (member.numberOfGuests || 1), 0)
+
+  const totalRate = (members: Booking[]) =>
+    members.reduce((sum, member) => sum + parseFloat(member.price || "0"), 0)
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-        <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Bookings Management</h2>
-        <Button onClick={() => handleOpenDialog()} className="flex items-center justify-center gap-2 w-full sm:w-auto">
-          <Plus size={20} />
+    <div className="space-y-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-xl font-semibold tracking-tight text-gray-900">Bookings</h2>
+          <p className="text-sm text-gray-500">
+            {bookingGroups.length} reservation{bookingGroups.length === 1 ? "" : "s"}
+          </p>
+        </div>
+        <Button onClick={() => handleOpenDialog()} className="inline-flex items-center justify-center gap-2">
+          <Plus size={18} />
           Add Booking
         </Button>
       </div>
 
+      <AdminSearch
+        value={searchQuery}
+        onChange={setSearchQuery}
+        placeholder="Search guest, room, phone, company..."
+      />
+
+      <div className="flex flex-wrap gap-1.5">
+        {[{ value: "all", label: "All" }, ...BOOKING_STATUSES].map((item) => {
+          const count = item.value === "all"
+            ? bookingGroups.length
+            : bookingGroups.filter((group) => group.members[0]?.status === item.value).length
+          const active = statusFilter === item.value
+          return (
+            <button
+              key={item.value}
+              type="button"
+              onClick={() => setStatusFilter(item.value)}
+              className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                active ? "bg-gray-900 text-white" : "bg-white text-gray-600 ring-1 ring-gray-200 hover:bg-gray-50"
+              }`}
+            >
+              {item.label} {count}
+            </button>
+          )
+        })}
+      </div>
+
       <div className="md:hidden space-y-3">
-        {bookings.length === 0 && (
-          <div className="bg-white rounded-lg shadow p-6 text-center text-sm text-gray-500">
-            No bookings yet
+        {visibleGroups.length === 0 && (
+          <div className="rounded-xl border border-gray-200 bg-white px-4 py-10 text-center text-sm text-gray-500">
+            {searchQuery ? `No bookings match “${searchQuery}”` : "No bookings in this view"}
           </div>
         )}
-        {bookings.map((booking) => (
-          <div key={booking.id} className="bg-white rounded-lg shadow p-4 space-y-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="font-semibold text-gray-900 truncate">{booking.guest}</p>
-                <p className="text-xs text-gray-500 truncate">{booking.phone || booking.email || "No contact"}</p>
+        {visibleGroups.map((group) => {
+          const primary = group.members[0]
+          const rooms = summarizeRooms(group.members)
+          const contact = contactLabel(primary)
+          return (
+            <div key={group.key} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-semibold text-gray-900 truncate">{guestLabel(primary.guest)}</p>
+                  <p className="text-xs text-gray-500 truncate">
+                    {contact || "No contact"} · {sourceLabel(primary.bookingSource)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button onClick={() => handleOpenDialog(primary)} className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800" aria-label="Edit booking">
+                    <Edit size={16} />
+                  </button>
+                  <button onClick={() => handleDelete(group)} className="rounded-md p-1.5 text-gray-500 hover:bg-red-50 hover:text-red-600" aria-label="Delete booking">
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               </div>
-              <div className="flex gap-2 shrink-0">
-                <button onClick={() => handleOpenDialog(booking)} className="text-blue-600 hover:text-blue-800">
-                  <Edit size={18} />
-                </button>
-                <button onClick={() => handleDelete(booking.id)} className="text-red-600 hover:text-red-800">
-                  <Trash2 size={18} />
-                </button>
+              <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400">Stay</p>
+                  <p className="font-medium text-gray-800">{formatStayRange(primary.checkin, primary.checkout)}</p>
+                  <p className="text-xs text-gray-500">{stayNightsAndDays(primary.checkin, primary.checkout).label}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400">Total</p>
+                  <p className="font-medium text-gray-800">{formatMoney(totalRate(group.members), primary.currency)}</p>
+                  <p className="text-xs text-gray-500">{totalPax(group.members)} pax · {mealPlanCode(primary.bookingType)}</p>
+                </div>
               </div>
+              <div className="mt-3">
+                <p className="text-sm text-gray-800">{rooms.summary.join(" · ")}</p>
+                <p className="mt-1 text-xs text-gray-500">
+                  {rooms.assigned.length > 0
+                    ? `Rooms ${rooms.assigned.map((num) => `#${num}`).join("  ")}`
+                    : `${group.members.length} ${group.members.length === 1 ? "room" : "rooms"} · assign at check-in`}
+                  {rooms.unassigned > 0 && rooms.assigned.length > 0 ? ` · ${rooms.unassigned} unassigned` : ""}
+                </p>
+              </div>
+              <div className="mt-3">{renderStatusSelect(group, "h-8 w-full border-0 bg-transparent shadow-none px-0 focus:ring-0")}</div>
             </div>
-            <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
-              <div>
-                <span className="text-gray-400">Room</span>
-                <p className="font-medium text-gray-800">{booking.room} {booking.roomNumber ? `#${booking.roomNumber}` : ""}</p>
-              </div>
-              <div>
-                <span className="text-gray-400">Pax / Plan</span>
-                <p className="font-medium text-gray-800">{booking.numberOfGuests || 1} · {mealPlanLabel(booking.bookingType)}</p>
-              </div>
-              <div>
-                <span className="text-gray-400">Dates</span>
-                <p className="font-medium text-gray-800">{booking.checkin} → {booking.checkout}</p>
-              </div>
-              <div>
-                <span className="text-gray-400">Rate</span>
-                <p className="font-medium text-gray-800">{currencySymbol(booking.currency)} {booking.price || "0"}</p>
-              </div>
-            </div>
-            <Select
-              value={booking.status}
-              onValueChange={(value) =>
-                handleStatusChange(booking.id, value as "Confirmed" | "Pending" | "Cancelled" | "Checked In" | "Checked Out")
-              }
-            >
-              <SelectTrigger className="w-full">
-                <span className="text-sm">{booking.status}</span>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Pending">Pending</SelectItem>
-                <SelectItem value="Confirmed">Confirmed</SelectItem>
-                <SelectItem value="Checked In">Checked In</SelectItem>
-                <SelectItem value="Checked Out">Checked Out</SelectItem>
-                <SelectItem value="Cancelled">Cancelled</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
-      <div className="hidden md:block bg-white rounded-lg shadow overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px]">
-            <thead className="bg-gray-50 border-b border-gray-200">
+      <div className="hidden md:block overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+        <table className="w-full">
+          <thead className="bg-gray-50/80">
+            <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+              <th className="w-8 px-2 py-3" />
+              <th className="px-3 py-3">Guest</th>
+              <th className="px-3 py-3">Stay</th>
+              <th className="px-3 py-3">Rooms</th>
+              <th className="px-3 py-3">Plan</th>
+              <th className="px-3 py-3 text-right">Total</th>
+              <th className="px-3 py-3">Status</th>
+              <th className="px-3 py-3 text-right"> </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {visibleGroups.length === 0 && (
               <tr>
-                <th className="px-3 lg:px-4 py-3 text-left text-sm font-semibold text-gray-600">Guest</th>
-                <th className="px-3 lg:px-4 py-3 text-left text-sm font-semibold text-gray-600">Contact</th>
-                <th className="px-3 lg:px-4 py-3 text-left text-sm font-semibold text-gray-600">Room</th>
-                <th className="px-3 lg:px-4 py-3 text-left text-sm font-semibold text-gray-600">Pax / Plan</th>
-                <th className="px-3 lg:px-4 py-3 text-left text-sm font-semibold text-gray-600">Room #</th>
-                <th className="px-3 lg:px-4 py-3 text-left text-sm font-semibold text-gray-600">Dates</th>
-                <th className="px-3 lg:px-4 py-3 text-left text-sm font-semibold text-gray-600">Rate</th>
-                <th className="px-3 lg:px-4 py-3 text-left text-sm font-semibold text-gray-600">Source</th>
-                <th className="px-3 lg:px-4 py-3 text-left text-sm font-semibold text-gray-600">Status</th>
-                <th className="px-3 lg:px-4 py-3 text-left text-sm font-semibold text-gray-600">Actions</th>
+                <td colSpan={8} className="px-4 py-12 text-center text-sm text-gray-500">
+                  {searchQuery ? `No bookings match “${searchQuery}”` : "No bookings in this view"}
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {bookings.map((booking) => (
-                <tr key={booking.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                  <td className="px-3 lg:px-4 py-3 text-sm font-medium text-gray-900">{booking.guest}</td>
-                  <td className="px-3 lg:px-4 py-3 text-sm text-gray-600">
-                    <div className="flex flex-col">
-                      {booking.email && <span className="text-xs">{booking.email}</span>}
-                      {booking.phone && <span className="text-xs">{booking.phone}</span>}
-                    </div>
-                  </td>
-                  <td className="px-3 lg:px-4 py-3 text-sm text-gray-600">
-                    <div>{booking.room}</div>
-                    <div className="text-xs text-gray-500">{booking.occupancy || "—"}</div>
-                  </td>
-                  <td className="px-3 lg:px-4 py-3 text-sm text-gray-600">
-                    <div>{booking.numberOfGuests || 1} pax</div>
-                    <div className="text-xs text-gray-500">{mealPlanLabel(booking.bookingType)}</div>
-                  </td>
-                  <td className="px-3 lg:px-4 py-3 text-sm font-semibold text-primary">
-                    {booking.roomNumber || <span className="text-gray-400">Not assigned</span>}
-                  </td>
-                  <td className="px-3 lg:px-4 py-3 text-sm text-gray-600">
-                    <div className="flex flex-col">
-                      <span className="text-xs">{booking.checkin}</span>
-                      <span className="text-xs">{booking.checkout}</span>
-                    </div>
-                  </td>
-                  <td className="px-3 lg:px-4 py-3 text-sm font-semibold text-gray-900 whitespace-nowrap">
-                    {currencySymbol(booking.currency)} {booking.price || "0"}
-                  </td>
-                  <td className="px-3 lg:px-4 py-3 text-sm">
-                    <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                      booking.bookingSource === "website" ? "bg-blue-100 text-blue-700" :
-                      booking.bookingSource === "phone" ? "bg-purple-100 text-purple-700" :
-                      "bg-gray-100 text-gray-700"
-                    }`}>
-                      {booking.bookingSource || "phone"}
-                    </span>
-                  </td>
-                  <td className="px-3 lg:px-4 py-3 text-sm">
-                    <Select
-                      value={booking.status}
-                      onValueChange={(value) =>
-                        handleStatusChange(booking.id, value as "Confirmed" | "Pending" | "Cancelled" | "Checked In" | "Checked Out")
-                      }
-                    >
-                      <SelectTrigger className="w-[130px]">
-                        <div
-                          className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center w-fit ${
-                            booking.status === "Confirmed"
-                              ? "bg-green-100 text-green-700"
-                              : booking.status === "Pending"
-                                ? "bg-yellow-100 text-yellow-700"
-                                : booking.status === "Checked In"
-                                  ? "bg-purple-100 text-purple-700"
-                                  : booking.status === "Checked Out"
-                                    ? "bg-blue-100 text-blue-700"
-                                    : "bg-red-100 text-red-700"
-                          }`}
+            )}
+            {visibleGroups.map((group) => {
+              const primary = group.members[0]
+              const rooms = summarizeRooms(group.members)
+              const contact = contactLabel(primary)
+              const open = expandedKeys.has(group.key)
+              return (
+                <Fragment key={group.key}>
+                  <tr className="align-top hover:bg-gray-50/70">
+                    <td className="px-2 py-3">
+                      {group.members.length > 1 ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleExpanded(group.key)}
+                          className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                          aria-label={open ? "Hide room details" : "Show room details"}
                         >
-                          <CheckCircle size={14} className="mr-1" />
-                          {booking.status}
+                          <ChevronDown size={16} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+                        </button>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-3">
+                      <p className="font-medium text-gray-900">{guestLabel(primary.guest)}</p>
+                      <p className="mt-0.5 text-xs text-gray-500">
+                        {contact || "No contact"} · {sourceLabel(primary.bookingSource)}
+                      </p>
+                    </td>
+                    <td className="px-3 py-3 whitespace-nowrap">
+                      <p className="text-sm text-gray-800">{formatStayRange(primary.checkin, primary.checkout)}</p>
+                      <p className="text-xs text-gray-500">{stayNightsAndDays(primary.checkin, primary.checkout).label}</p>
+                    </td>
+                    <td className="px-3 py-3">
+                      <p className="text-sm text-gray-800">{rooms.summary.join(" · ")}</p>
+                      {rooms.assigned.length > 0 ? (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {rooms.assigned.map((num) => (
+                            <span key={num} className="rounded-md bg-gray-100 px-1.5 py-0.5 text-[11px] font-medium text-gray-700">
+                              #{num}
+                            </span>
+                          ))}
+                          {rooms.unassigned > 0 && (
+                            <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700">
+                              {rooms.unassigned} unassigned
+                            </span>
+                          )}
                         </div>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Pending">Pending</SelectItem>
-                        <SelectItem value="Confirmed">Confirmed</SelectItem>
-                        <SelectItem value="Checked In">Checked In</SelectItem>
-                        <SelectItem value="Checked Out">Checked Out</SelectItem>
-                        <SelectItem value="Cancelled">Cancelled</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </td>
-                  <td className="px-3 lg:px-4 py-3 text-sm space-x-2 flex">
-                    <button
-                      onClick={() => handleOpenDialog(booking)}
-                      className="text-blue-600 hover:text-blue-800 transition-colors"
-                    >
-                      <Edit size={18} />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(booking.id)}
-                      className="text-red-600 hover:text-red-800 transition-colors"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                      ) : (
+                        <p className="mt-1 text-xs text-gray-400">
+                          {group.members.length} {group.members.length === 1 ? "room" : "rooms"} · assign at check-in
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-700">
+                      {totalPax(group.members)} pax · {mealPlanCode(primary.bookingType)}
+                    </td>
+                    <td className="px-3 py-3 text-right text-sm font-medium text-gray-900 whitespace-nowrap">
+                      {formatMoney(totalRate(group.members), primary.currency)}
+                    </td>
+                    <td className="px-3 py-3">{renderStatusSelect(group)}</td>
+                    <td className="px-3 py-3">
+                      <div className="flex justify-end gap-1">
+                        <button
+                          onClick={() => handleOpenDialog(primary)}
+                          className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-800"
+                          aria-label="Edit booking"
+                        >
+                          <Edit size={16} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(group)}
+                          className="rounded-md p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                          aria-label="Delete booking"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  {open && (
+                    <tr className="bg-gray-50/80">
+                      <td />
+                      <td colSpan={7} className="px-3 pb-4 pt-0">
+                        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="text-left text-[11px] uppercase tracking-wide text-gray-400">
+                                <th className="px-3 py-2">Room type</th>
+                                <th className="px-3 py-2">Occ.</th>
+                                <th className="px-3 py-2">Pax</th>
+                                <th className="px-3 py-2">Room #</th>
+                                <th className="px-3 py-2 text-right">Rate</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {group.members.map((member, index) => (
+                                <tr key={member.id} className="border-t border-gray-100">
+                                  <td className="px-3 py-2 text-gray-800">{member.room || `Room ${index + 1}`}</td>
+                                  <td className="px-3 py-2 text-gray-600">{member.occupancy || "—"}</td>
+                                  <td className="px-3 py-2 text-gray-600">{member.numberOfGuests || 1}</td>
+                                  <td className="px-3 py-2 text-gray-600">{member.roomNumber ? `#${member.roomNumber}` : "—"}</td>
+                                  <td className="px-3 py-2 text-right text-gray-800">{formatMoney(member.price, member.currency || primary.currency)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              )
+            })}
+          </tbody>
+        </table>
       </div>
 
-      {/* Add/Edit Booking Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>{editingBooking ? "Edit Booking" : "Add New Booking"}</DialogTitle>
+            <DialogTitle>{editingMembers.length > 0 ? "Edit Booking" : "Add New Booking"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="guest">Guest Name *</Label>
+                <Label htmlFor="guest">Guest Name</Label>
                 <Input
                   id="guest"
                   value={formData.guest}
                   onChange={(e) => setFormData({ ...formData, guest: e.target.value })}
-                  required
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
                   id="email"
-                  type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 />
@@ -578,52 +798,140 @@ export default function BookingsManager() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="room">Room *</Label>
-                <Select value={formData.room} onValueChange={(value) => setFormData({ ...formData, room: value, roomNumber: "" })}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a room" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {rooms.map((room) => (
-                      <SelectItem key={room} value={room}>
-                        {room}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="checkin">Check-in</Label>
+                <Input
+                  id="checkin"
+                  type="date"
+                  value={formData.checkin}
+                  onChange={(e) => setFormData({ ...formData, checkin: e.target.value })}
+                />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="roomNumber">
-                  Room Number {formData.status === "Confirmed" && <span className="text-red-500">*</span>}
-                </Label>
-                <Select value={formData.roomNumber} onValueChange={(value) => setFormData({ ...formData, roomNumber: value })}>
-                  <SelectTrigger className={formData.status === "Confirmed" && !formData.roomNumber ? "border-red-500" : ""}>
-                    <SelectValue placeholder="Select room #" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableRoomNumbers.length > 0 ? (
-                      availableRoomNumbers.map((num) => (
-                        <SelectItem key={num} value={num}>
-                          {num}
-                        </SelectItem>
-                      ))
-                    ) : (
-                      // Use a non-empty sentinel value to satisfy Radix Select requirements
-                      <SelectItem value="no-rooms" disabled>
-                        No rooms available
-                      </SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-                {formData.status === "Confirmed" && !formData.roomNumber && (
-                  <p className="text-xs text-red-500">Room number required for confirmed bookings</p>
-                )}
+                <Label htmlFor="checkout">Check-out</Label>
+                <Input
+                  id="checkout"
+                  type="date"
+                  value={formData.checkout}
+                  onChange={(e) => setFormData({ ...formData, checkout: e.target.value })}
+                />
               </div>
             </div>
+            <p className="text-sm text-gray-600 -mt-2">
+              Stay: <span className="font-semibold">{stayNightsAndDays(formData.checkin, formData.checkout).label}</span>
+            </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(0,0.7fr)_auto] gap-4">
+            <div className="space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+                <div className="space-y-2 w-full sm:w-40">
+                  <Label htmlFor="roomCount">No. of rooms</Label>
+                  <Input
+                    id="roomCount"
+                    type="number"
+                    min="1"
+                    value={formData.rooms.length}
+                    onChange={(e) => setRoomCount(e.target.value)}
+                  />
+                  <p className="text-xs text-gray-500">Room numbers are assigned at check-in.</p>
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={addRoomLine} className="shrink-0">
+                  <Plus size={16} className="mr-1" />
+                  Add room
+                </Button>
+              </div>
+
+              {formData.rooms.map((line, index) => (
+                <div key={line.id || `new-${index}`} className="rounded-lg border border-gray-200 p-3 sm:p-4 space-y-4 bg-gray-50/60">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold text-gray-800">Room {index + 1}</p>
+                    {formData.rooms.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeRoomLine(index)}
+                        className="text-gray-500 hover:text-red-600"
+                        aria-label={`Remove room ${index + 1}`}
+                      >
+                        <X size={16} />
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Room type</Label>
+                      <Select
+                        value={line.room || undefined}
+                        onValueChange={(value) => updateRoomLine(index, { room: value, roomNumber: "", occupancy: defaultOccupancyForRoomType(value) })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a room type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {picklistRoomTypes(rooms, line.room).map((room) => (
+                            <SelectItem key={room.id || room.name} value={room.name}>
+                              {room.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="min-w-0 space-y-2">
+                      <Label>Occupancy</Label>
+                      <Select value={line.occupancy || undefined} onValueChange={(value) => updateRoomLine(index, { occupancy: value })}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Occupancy" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {OCCUPANCY_TYPES.map((item) => (
+                            <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(0,0.7fr)_auto_minmax(0,1fr)] gap-4">
+                    <div className="min-w-0 space-y-2">
+                      <Label>No. of Pax</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={line.numberOfGuests}
+                        onChange={(e) => updateRoomLine(index, { numberOfGuests: e.target.value })}
+                      />
+                    </div>
+                    <div className="flex items-end pb-2">
+                      <label className="flex items-center gap-2 text-sm whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          checked={line.extraBed}
+                          onChange={(e) => updateRoomLine(index, { extraBed: e.target.checked })}
+                        />
+                        Extra bed
+                      </label>
+                    </div>
+                    <div className="min-w-0 space-y-2">
+                      <Label>Rate</Label>
+                      <div className="flex items-center">
+                        <span className="px-3 py-2 bg-gray-100 border border-r-0 rounded-l-md text-sm">{currencySymbol(formData.currency)}</span>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={line.price}
+                          onChange={(e) => updateRoomLine(index, { price: e.target.value })}
+                          className="rounded-l-none"
+                          placeholder="Custom / partner rate"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="min-w-0 space-y-2">
-                <Label>Meal Plan *</Label>
+                <Label>Meal Plan</Label>
                 <Select value={formData.bookingType} onValueChange={(value) => setFormData({ ...formData, bookingType: value })}>
                   <SelectTrigger>
                     <SelectValue />
@@ -635,88 +943,6 @@ export default function BookingsManager() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="min-w-0 space-y-2">
-                <Label>Occupancy</Label>
-                <Select value={formData.occupancy} onValueChange={(value) => setFormData({ ...formData, occupancy: value })}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {OCCUPANCY_TYPES.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="min-w-0 space-y-2">
-                <Label htmlFor="numberOfGuests">No. of Pax *</Label>
-                <Input
-                  id="numberOfGuests"
-                  type="number"
-                  min="1"
-                  value={formData.numberOfGuests}
-                  onChange={(e) => setFormData({ ...formData, numberOfGuests: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="flex items-end pb-2">
-                <label className="flex items-center gap-2 text-sm whitespace-nowrap">
-                  <input
-                    type="checkbox"
-                    checked={formData.extraBed}
-                    onChange={(e) => setFormData({ ...formData, extraBed: e.target.checked })}
-                  />
-                  Extra bed
-                </label>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="checkin">Check-in *</Label>
-                <Input
-                  id="checkin"
-                  type="date"
-                  value={formData.checkin}
-                  onChange={(e) => setFormData({ ...formData, checkin: e.target.value })}
-                  min={editingBooking ? undefined : new Date().toISOString().split("T")[0]}
-                  required
-                />
-                {!editingBooking && (
-                  <p className="text-xs text-gray-500">Minimum: Today</p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="checkout">Check-out *</Label>
-                <Input
-                  id="checkout"
-                  type="date"
-                  value={formData.checkout}
-                  onChange={(e) => setFormData({ ...formData, checkout: e.target.value })}
-                  min={formData.checkin || new Date().toISOString().split("T")[0]}
-                  required
-                />
-                <p className="text-xs text-gray-500">Must be after check-in</p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="price">Rate (optional)</Label>
-                <div className="flex items-center">
-                  <span className="px-3 py-2 bg-gray-100 border border-r-0 rounded-l-md text-sm">{currencySymbol(formData.currency)}</span>
-                  <Input
-                    id="price"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={formData.price}
-                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                    className="rounded-l-none"
-                    placeholder="Custom / partner rate"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label>Currency</Label>
                 <Select value={formData.currency} onValueChange={(value) => setFormData({ ...formData, currency: value })}>
@@ -731,30 +957,33 @@ export default function BookingsManager() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="status">Status *</Label>
+                <Label htmlFor="status">Status</Label>
                 <Select
                   value={formData.status}
                   onValueChange={(value) =>
-                    setFormData({ ...formData, status: value as "Confirmed" | "Pending" | "Cancelled" | "Checked In" | "Checked Out" })
+                    setFormData({ ...formData, status: value as typeof emptyForm.status })
                   }
                 >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Pending">Pending</SelectItem>
-                    <SelectItem value="Confirmed">Confirmed</SelectItem>
-                    <SelectItem value="Checked In">Checked In</SelectItem>
-                    <SelectItem value="Checked Out">Checked Out</SelectItem>
-                    <SelectItem value="Cancelled">Cancelled</SelectItem>
+                    {BOOKING_STATUSES.filter((item) => item.value !== "Checked In" || formData.status === "Checked In").map((item) => (
+                      <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="bookingSource">Booking Source *</Label>
+                <Label htmlFor="bookingSource">Booking Source</Label>
                 <Select
                   value={formData.bookingSource}
-                  onValueChange={(value) => setFormData({ ...formData, bookingSource: value, businessId: value === "phone" || value === "website" || value === "walkin" ? "" : formData.businessId })}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, bookingSource: value, businessId: value === "phone" || value === "website" || value === "walkin" ? "" : formData.businessId })
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -766,98 +995,102 @@ export default function BookingsManager() {
                   </SelectContent>
                 </Select>
               </div>
+              {(formData.bookingSource === "travel_agent" || formData.bookingSource === "company" || formData.bookingSource === "business") && (
+                <div className="space-y-2">
+                  <Label>Company / Agent</Label>
+                  <AdminSearch
+                    value={partnerSearch}
+                    onChange={setPartnerSearch}
+                    placeholder="Search partners..."
+                    className="mb-2"
+                  />
+                  <Select value={formData.businessId} onValueChange={(value) => setFormData({ ...formData, businessId: value })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select from business partners" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {businesses.filter((business: any) => matchesSearch(partnerSearch, business.name, business.phone, business.contactPerson)).map((business) => (
+                        <SelectItem key={business.id} value={String(business.id)}>{business.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
-
-            {(formData.bookingSource === "travel_agent" || formData.bookingSource === "company" || formData.bookingSource === "business") && (
-              <div className="space-y-2">
-                <Label>Company / Agent</Label>
-                <Select value={formData.businessId} onValueChange={(value) => setFormData({ ...formData, businessId: value })}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select from business partners" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {businesses.map((business) => (
-                      <SelectItem key={business.id} value={String(business.id)}>{business.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
 
             <div className="flex justify-end gap-2 pt-4">
               <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit">{editingBooking ? "Update Booking" : "Add Booking"}</Button>
+              <Button type="submit">
+                {editingMembers.length > 0
+                  ? "Update Booking"
+                  : formData.rooms.length > 1
+                    ? `Add Booking (${formData.rooms.length} rooms)`
+                    : "Add Booking"}
+              </Button>
             </div>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Quick Room Assignment Dialog */}
       <Dialog open={isRoomAssignDialogOpen} onOpenChange={setIsRoomAssignDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Assign Room Number</DialogTitle>
+            <DialogTitle>Assign rooms to check in</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            {editingBooking && (
+            {editingMembers.length > 0 && (
               <>
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
-                  <p className="text-sm font-semibold text-blue-900">Booking Details:</p>
-                  <div className="space-y-1 text-sm text-blue-800">
-                    <p><span className="font-medium">Guest:</span> {editingBooking.guest}</p>
-                    <p><span className="font-medium">Room Type:</span> {editingBooking.room}</p>
-                    <p><span className="font-medium">Dates:</span> {editingBooking.checkin} to {editingBooking.checkout}</p>
-                  </div>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-1 text-sm text-blue-800">
+                  <p><span className="font-medium">Guest:</span> {editingMembers[0].guest || "—"}</p>
+                  <p><span className="font-medium">Dates:</span> {editingMembers[0].checkin || "—"} to {editingMembers[0].checkout || "—"}</p>
+                  <p><span className="font-medium">Rooms:</span> {editingMembers.length}</p>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="quickRoomNumber">Select Room Number *</Label>
-                  <Select value={quickRoomAssign} onValueChange={setQuickRoomAssign}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Choose available room..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableRoomNumbers.length > 0 ? (
-                        availableRoomNumbers.map((num) => (
-                          <SelectItem key={num} value={num}>
-                            Room {num}
-                          </SelectItem>
-                        ))
-                      ) : (
-                        <SelectItem value="no-rooms" disabled>
-                          No rooms available
-                        </SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
-                  {availableRoomNumbers.length === 0 && (
-                    <p className="text-xs text-red-500">
-                      No rooms available for this type. Add room numbers in Room Numbers tab.
-                    </p>
-                  )}
-                </div>
+                {editingMembers.map((member, index) => {
+                  const available = getAvailableForCheckIn(member)
+                  const selected = checkInAssignments[member.id]
+                  const numbersToShow = selected && !available.includes(selected) ? [selected, ...available] : available
+                  return (
+                    <div key={member.id} className="space-y-2">
+                      <Label>Room {index + 1} {member.room ? `(${member.room})` : ""}</Label>
+                      <Select
+                        value={selected || undefined}
+                        onValueChange={(value) => setCheckInAssignments((prev) => ({ ...prev, [member.id]: value }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select room #" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {numbersToShow.length > 0 ? (
+                            numbersToShow.map((num) => (
+                              <SelectItem key={num} value={num}>Room {num}</SelectItem>
+                            ))
+                          ) : (
+                            <SelectItem value="no-rooms" disabled>No rooms available</SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )
+                })}
 
-                <div className="flex gap-2 pt-4">
+                <div className="flex gap-2 pt-2">
                   <Button
                     type="button"
                     variant="outline"
                     onClick={() => {
                       setIsRoomAssignDialogOpen(false)
                       setPendingStatusChange(null)
-                      setQuickRoomAssign("")
+                      setCheckInAssignments({})
                     }}
                     className="flex-1"
                   >
                     Cancel
                   </Button>
-                  <Button
-                    onClick={handleQuickRoomAssign}
-                    disabled={!quickRoomAssign || quickRoomAssign === "no-rooms"}
-                    className="flex-1 bg-green-600 hover:bg-green-700"
-                  >
-                    Assign & Confirm
+                  <Button onClick={handleQuickRoomAssign} className="flex-1 bg-green-600 hover:bg-green-700">
+                    Assign & Check In
                   </Button>
                 </div>
               </>

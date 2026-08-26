@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { X } from "lucide-react"
+import { Search, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -81,6 +81,7 @@ export default function InventoryItemForm({ item, onClose }: InventoryItemFormPr
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [menuItems, setMenuItems] = useState<{ id: number; name: string; category: string }[]>([])
+  const [menuSearch, setMenuSearch] = useState("")
 
   useEffect(() => {
     fetch("/api/restaurant/menu")
@@ -227,13 +228,28 @@ export default function InventoryItemForm({ item, onClose }: InventoryItemFormPr
 
             <div>
               <Label>Link to RMS menu item (for countable stock)</Label>
+              <div className="relative mt-2 mb-2">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Input
+                  value={menuSearch}
+                  onChange={(e) => setMenuSearch(e.target.value)}
+                  placeholder="Search menu items to link..."
+                  className="pl-9"
+                />
+              </div>
               <Select value={formData.menuItemId} onValueChange={(val) => setFormData({ ...formData, menuItemId: val })}>
                 <SelectTrigger>
                   <SelectValue placeholder="Not linked" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Not linked</SelectItem>
-                  {menuItems.map((menuItem) => (
+                  {menuItems
+                    .filter((menuItem) => {
+                      const q = menuSearch.trim().toLowerCase()
+                      if (!q) return true
+                      return menuItem.name.toLowerCase().includes(q) || menuItem.category.toLowerCase().includes(q)
+                    })
+                    .map((menuItem) => (
                     <SelectItem key={menuItem.id} value={String(menuItem.id)}>
                       {menuItem.name} ({menuItem.category})
                     </SelectItem>

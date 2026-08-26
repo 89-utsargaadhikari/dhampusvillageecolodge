@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { AdminSearch, matchesSearch } from "@/components/admin-search"
 
 interface HeroMedia {
   id: number
@@ -34,6 +35,7 @@ export default function HeroSettingsManager() {
     url: "",
   })
   const [loading, setLoading] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
 
   useEffect(() => {
     loadSettings()
@@ -263,13 +265,19 @@ export default function HeroSettingsManager() {
           {/* Current Media List */}
           <div>
             <h4 className="font-semibold mb-3">Current Slideshow Media ({Array.isArray(heroMedia) ? heroMedia.length : 0})</h4>
+            <AdminSearch
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="Search slideshow media..."
+              className="mb-3"
+            />
             {!Array.isArray(heroMedia) || heroMedia.length === 0 ? (
               <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
                 <p className="text-gray-500">No media added yet. Add images or videos above.</p>
               </div>
             ) : (
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {heroMedia.map((media) => (
+                {heroMedia.filter((media) => matchesSearch(searchQuery, media.type, media.url)).map((media) => (
                   <div
                     key={media.id}
                     className="group relative border-2 border-gray-200 rounded-lg overflow-hidden hover:border-blue-400 transition-all"

@@ -5,6 +5,7 @@ export interface Room {
   id: number
   name: string
   price: string
+  currency?: string // NPR | USD | INR (defaults to NPR)
   description: string
   capacity: number
   status: "Available" | "Booked"

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import Link from "next/link"
 import { Search, CheckCircle, Clock, XCircle, Mail, Phone, Calendar, MapPin } from "lucide-react"
 import { fetchBookings } from "@/lib/api"
+import { currencySymbol } from "@/lib/hotel"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -21,6 +22,7 @@ interface Booking {
   price: string
   status: string
   bookingSource: string | null
+  currency?: string | null
 }
 
 export default function BookingStatusPage() {
@@ -249,7 +251,7 @@ export default function BookingStatusPage() {
                       <div className="border-t pt-4">
                         <div className="flex justify-between items-center">
                           <p className="text-gray-600">Total Amount</p>
-                          <p className="text-2xl font-bold text-primary">${booking.price}</p>
+                          <p className="text-2xl font-bold text-primary">{currencySymbol(booking.currency)} {booking.price}</p>
                         </div>
                       </div>
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
+import { canonicalizeRoomTypeName } from '@/lib/hotel'
 
 // PUT /api/rooms/[id] - Update room
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -8,11 +9,14 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const id = parseInt(paramId)
     const body = await request.json()
     
+    const existing = await prisma.room.findUnique({ where: { id } })
+    const name = canonicalizeRoomTypeName(String(body.name || existing?.name || ''))
     const room = await prisma.room.update({
       where: { id },
       data: {
-        name: body.name,
+        name,
         price: body.price,
+        currency: body.currency || 'NPR',
         description: body.description,
         capacity: body.capacity,
         status: body.status,
@@ -23,6 +27,11 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       }
     })
     
+    if (existing?.name && existing.name !== name) {
+      await prisma.booking.updateMany({ where: { room: existing.name }, data: { room: name } })
+      await prisma.businessRateCard.updateMany({ where: { roomType: existing.name }, data: { roomType: name } })
+    }
+
     // Sync room inventory: Delete old entries and create new ones
     await prisma.roomInventory.deleteMany({
       where: { roomTypeId: id }
@@ -31,7 +40,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     if (body.roomNumbers && body.roomNumbers.length > 0) {
       const inventoryData = body.roomNumbers.map((roomNumber: string) => ({
         roomNumber: roomNumber.trim(),
-        roomType: body.name,
+        roomType: name,
         roomTypeId: room.id,
         floor: null,
         notes: null

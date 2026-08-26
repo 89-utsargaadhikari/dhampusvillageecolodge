@@ -16,7 +16,10 @@ export const createRoom = async (roomData: any) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(roomData)
   })
-  if (!res.ok) throw new Error('Failed to create room')
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({}))
+    throw new Error(payload.error || 'Failed to create room')
+  }
   return res.json()
 }
 
@@ -54,7 +57,10 @@ export const createBooking = async (bookingData: any) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(bookingData)
   })
-  if (!res.ok) throw new Error('Failed to create booking')
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({}))
+    throw new Error(payload.details || payload.error || 'Failed to create booking')
+  }
   return res.json()
 }
 
@@ -250,7 +256,10 @@ export const deleteRestaurantOrder = async (id: number) => {
   const res = await fetch(`/api/restaurant/orders/${id}`, {
     method: 'DELETE'
   })
-  if (!res.ok) throw new Error('Failed to delete order')
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({}))
+    throw new Error(payload.details || payload.error || 'Failed to delete order')
+  }
   return res.json()
 }
 
