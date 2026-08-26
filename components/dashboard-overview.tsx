@@ -62,10 +62,10 @@ export default function DashboardOverview() {
       await run(async () => {
       const [bookings, roomsData, inventory, orders, transactions, inventoryItems] = await Promise.all([
         fetchBookings(),
-        fetchRooms(),
-        fetchRoomInventory(),
-        fetchRestaurantOrders(),
-        fetchAccountTransactions(),
+        fetchRooms().catch(() => []),
+        fetchRoomInventory().catch(() => []),
+        fetchRestaurantOrders().catch(() => []),
+        fetchAccountTransactions().catch(() => []),
         fetch("/api/inventory").then(res => res.json()).catch(() => [])
       ])
 

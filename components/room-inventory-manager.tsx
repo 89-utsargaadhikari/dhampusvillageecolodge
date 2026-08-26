@@ -416,7 +416,7 @@ export default function RoomInventoryManager() {
             <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
               <li>Click "Add Room Number" to add a physical door (101, 102, 201)</li>
               <li>Assign it to Standard Room or Deluxe Room</li>
-              <li>On the booking, pick occupancy (SGL, DBL, or TRPL) for that stay</li>
+              <li>On the booking, pick occupancy (SGL, TWIN, DBL, or TRPL) for that stay</li>
               <li>When checking a guest in, only rooms of that type are offered</li>
             </ol>
           </div>

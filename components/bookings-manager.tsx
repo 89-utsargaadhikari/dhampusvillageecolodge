@@ -57,7 +57,7 @@ function emptyRoomLine(room = ""): RoomLine {
   return {
     room,
     roomNumber: "",
-    occupancy: "DBL",
+    occupancy: "SGL",
     numberOfGuests: "1",
     extraBed: false,
     price: "",
@@ -132,8 +132,8 @@ function mealPlanCode(code?: string | null) {
 
 function formatDateShort(value?: string | null) {
   if (!value) return null
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
+  const date = parseStayDate(value)
+  if (!date) return value
   return date.toLocaleDateString("en-GB", { day: "numeric", month: "short" })
 }
 
@@ -395,10 +395,10 @@ export default function BookingsManager() {
           id: member.id,
           room: member.room,
           roomNumber: member.roomNumber || "",
-          occupancy: member.occupancy || "DBL",
-          numberOfGuests: String(member.numberOfGuests || 1),
+          occupancy: member.occupancy || occupancyForPax(Number(member.numberOfGuests) || 1),
+          numberOfGuests: String(member.numberOfGuests || paxForOccupancy(member.occupancy)),
           extraBed: Boolean(member.extraBed),
-          price: member.price || "",
+          price: member.price ? String(nightlyRateFromStayTotal(member.price, primary.checkin, primary.checkout)) : "",
         })),
       })
     } else {
@@ -441,6 +441,11 @@ export default function BookingsManager() {
 
     const editingIds = new Set(formData.rooms.map((line) => line.id).filter(Boolean) as number[])
 
+    if (checkinDate && checkoutDate && checkoutDate <= checkinDate) {
+      alert("Check-out date must be after check-in date.")
+      return
+    }
+
     if (checkinDate && checkoutDate) {
       for (const line of formData.rooms) {
         if (!line.roomNumber) continue
@@ -470,7 +475,7 @@ export default function BookingsManager() {
       occupancy: line.occupancy,
       numberOfGuests: line.numberOfGuests,
       extraBed: line.extraBed,
-      price: line.price || "0",
+      price: String(stayTotalFromNightlyRate(line.price, formData.checkin, formData.checkout)),
     }))
 
     try {
@@ -872,7 +877,7 @@ export default function BookingsManager() {
                                 <th className="px-3 py-2">Occ.</th>
                                 <th className="px-3 py-2">Pax</th>
                                 <th className="px-3 py-2">Room #</th>
-                                <th className="px-3 py-2 text-right">Rate</th>
+                                <th className="px-3 py-2 text-right">Stay total</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -1106,7 +1111,7 @@ export default function BookingsManager() {
                       <Label>Room type</Label>
                       <Select
                         value={line.room || undefined}
-                        onValueChange={(value) => updateRoomLine(index, { room: value, roomNumber: "", occupancy: defaultOccupancyForRoomType(value) })}
+                        onValueChange={(value) => updateRoomLine(index, { room: value, roomNumber: "" })}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Select a room type" />
@@ -1155,7 +1160,13 @@ export default function BookingsManager() {
                         type="number"
                         min="1"
                         value={line.numberOfGuests}
-                        onChange={(e) => updateRoomLine(index, { numberOfGuests: e.target.value })}
+                        onChange={(e) => {
+                          const pax = Math.max(1, parseInt(e.target.value) || 1)
+                          updateRoomLine(index, {
+                            numberOfGuests: String(pax),
+                            occupancy: occupancyForPax(pax, line.occupancy),
+                          })
+                        }}
                       />
                     </div>
                     <div className="flex items-end pb-2">
@@ -1169,7 +1180,7 @@ export default function BookingsManager() {
                       </label>
                     </div>
                     <div className="min-w-0 space-y-2">
-                      <Label>Rate</Label>
+                      <Label>Rate / night</Label>
                       <div className="flex items-center">
                         <span className="px-3 py-2 bg-gray-100 border border-r-0 rounded-l-md text-sm">{currencySymbol(formData.currency)}</span>
                         <Input
@@ -1179,7 +1190,7 @@ export default function BookingsManager() {
                           value={line.price}
                           onChange={(e) => updateRoomLine(index, { price: e.target.value })}
                           className="rounded-l-none"
-                          placeholder="Custom / partner rate"
+                          placeholder="Nightly rate"
                         />
                       </div>
                       {selectedRateCard && (
@@ -1194,6 +1205,12 @@ export default function BookingsManager() {
                   </div>
                 </div>
               ))}
+              {formNights ? (
+                <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm">
+                  <span className="text-gray-600">Stay total ({formNights} night{formNights === 1 ? "" : "s"})</span>
+                  <span className="font-semibold text-gray-900">{formatMoney(formStayTotal, formData.currency)}</span>
+                </div>
+              ) : null}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
