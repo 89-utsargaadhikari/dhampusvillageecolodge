@@ -5,6 +5,7 @@ import Link from "next/link"
 import { Calendar, Users, Mail, Phone, User, CreditCard, CheckCircle, Sparkles, Star } from "lucide-react"
 import { type Room } from "@/lib/storage"
 import { fetchRooms, createBooking } from "@/lib/api"
+import { currencySymbol, isGuestFacingRoom } from "@/lib/hotel"
 import { addNotification } from "@/lib/notifications"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -35,7 +36,7 @@ export default function BookingPage() {
   const loadRooms = async () => {
     try {
       const roomsData = await fetchRooms()
-      const availableRooms = roomsData.filter((r: Room) => r.status === "Available")
+      const availableRooms = roomsData.filter((r: Room) => r.status === "Available" && isGuestFacingRoom(r))
       setRooms(availableRooms)
     } catch (error) {
       console.error('Failed to load rooms:', error)
@@ -124,7 +125,7 @@ export default function BookingPage() {
         numberOfGuests: guestCount,
         bookingType: "EP",
         occupancy: guestCount >= 3 ? "TRPL" : guestCount === 1 ? "SGL" : "DBL",
-        currency: "USD",
+        currency: selectedRoom.currency || "NPR",
       })
 
       addNotification(
@@ -391,7 +392,7 @@ export default function BookingPage() {
                                 <p className="text-sm text-gray-600 mb-3">{room.description}</p>
                                 <div className="flex items-center gap-4">
                                   <p className="text-2xl font-bold bg-gradient-to-r from-green-600 to-yellow-600 bg-clip-text text-transparent">
-                                    ${room.price}<span className="text-base text-gray-500">/night</span>
+                                    {currencySymbol(room.currency)} {room.price}<span className="text-base text-gray-500">/night</span>
                                   </p>
                                   <p className="text-sm text-gray-500 flex items-center gap-1">
                                     <Users size={16} />
@@ -468,11 +469,11 @@ export default function BookingPage() {
                         <div className="border-t-2 border-green-100 pt-4 space-y-3">
                           <div className="flex justify-between items-center">
                             <p className="text-sm text-gray-600">Room Rate</p>
-                            <p className="text-sm font-semibold">${selectedRoom.price} × {calculateNights()}</p>
+                            <p className="text-sm font-semibold">{currencySymbol(selectedRoom.currency)} {selectedRoom.price} × {calculateNights()}</p>
                           </div>
                           <div className="flex justify-between items-center p-4 bg-gradient-to-r from-green-600 to-yellow-600 rounded-xl shadow-lg">
                             <p className="text-white font-bold text-lg">Total</p>
-                            <p className="text-white font-bold text-2xl">${calculateTotal()}</p>
+                            <p className="text-white font-bold text-2xl">{currencySymbol(selectedRoom.currency)} {calculateTotal()}</p>
                           </div>
                         </div>
                       </>

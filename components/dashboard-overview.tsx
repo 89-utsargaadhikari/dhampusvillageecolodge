@@ -12,6 +12,7 @@ import {
   fetchAccountTransactions
 } from "@/lib/api"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { AdminSearch, matchesSearch } from "@/components/admin-search"
 
 type StatType = "bookings" | "revenue" | "guests" | "occupancy" | "restaurant" | "accounts" | null
 
@@ -37,6 +38,7 @@ export default function DashboardOverview() {
   })
   const [bookingData, setBookingData] = useState<{ month: string; bookings: number; revenue: number }[]>([])
   const [recentBookings, setRecentBookings] = useState<any[]>([])
+  const [searchQuery, setSearchQuery] = useState("")
   const [allBookings, setAllBookings] = useState<Booking[]>([])
   const [selectedStat, setSelectedStat] = useState<StatType>(null)
   const [rooms, setRooms] = useState<any[]>([])
@@ -363,7 +365,15 @@ export default function DashboardOverview() {
 
       {/* Recent Bookings Table */}
       <div className="bg-white rounded-lg p-4 sm:p-6 shadow min-w-0">
-        <h3 className="text-lg font-semibold mb-4">Recent Bookings</h3>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+          <h3 className="text-lg font-semibold">Recent Bookings</h3>
+          <AdminSearch
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search recent bookings..."
+            className="sm:w-72"
+          />
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -376,8 +386,8 @@ export default function DashboardOverview() {
               </tr>
             </thead>
             <tbody>
-              {recentBookings.length > 0 ? (
-                recentBookings.map((booking, i) => (
+              {recentBookings.filter((booking) => matchesSearch(searchQuery, booking.guest, booking.room, booking.roomNumber, booking.status)).length > 0 ? (
+                recentBookings.filter((booking) => matchesSearch(searchQuery, booking.guest, booking.room, booking.roomNumber, booking.status)).map((booking, i) => (
                 <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-4 py-3 text-sm">{booking.guest}</td>
                   <td className="px-4 py-3 text-sm">{booking.room}</td>

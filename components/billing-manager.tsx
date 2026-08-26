@@ -1,36 +1,63 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Receipt, Download, Printer, Check } from "lucide-react"
 import { 
   fetchBookings, 
   updateBooking,
   fetchRestaurantOrders,
+  fetchBusinesses,
   createAccountTransaction,
   createCreditAccount
 } from "@/lib/api"
 import { addNotification } from "@/lib/notifications"
-import { calculateInclusiveVat } from "@/lib/vat"
+import {
+  calculateInclusiveVat,
+  DEFAULT_VAT_PERCENT,
+  isDiscountTooLarge,
+  orderInclusiveSubtotal,
+  referencedVatPercent,
+  roundMoney,
+} from "@/lib/vat"
 import { mealPlanLabel } from "@/lib/hotel"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { AdminSearch, matchesSearch } from "@/components/admin-search"
 
 interface Bill {
   booking: any
   roomCharges: number
   numberOfNights: number
   restaurantOrders: any[]
+  restaurantInclusive: number
   restaurantTotal: number
-  subtotal: number
-  serviceTax: number
-  vat: number
-  exclusiveAmount: number
-  discountAmount: number
-  totalAmount: number
+}
+
+function orderReference(orders: any[]) {
+  const labels = orders.map((order) => order.orderNumber).filter(Boolean)
+  const storedVat = orders.reduce((sum, order) => sum + (order.tax || 0), 0)
+  if (orders.length === 1) {
+    const order = orders[0]
+    return {
+      labels,
+      storedVat: roundMoney(storedVat),
+      discountType: (order.discountType === "percentage" ? "percentage" : "amount") as "percentage" | "amount",
+      discountValue: order.discountValue || 0,
+      vatPercent: order.taxPercentage || referencedVatPercent(orders),
+    }
+  }
+  return {
+    labels,
+    storedVat: roundMoney(storedVat),
+    discountType: "amount" as const,
+    discountValue: roundMoney(orders.reduce((sum, order) => sum + (order.discountAmount || 0), 0)),
+    vatPercent: referencedVatPercent(orders),
+  }
 }
 
 export default function BillingManager() {
@@ -46,6 +73,70 @@ export default function BillingManager() {
   const [restaurantPaymentMethod, setRestaurantPaymentMethod] = useState<string>("cash")
   const [checkoutDiscountType, setCheckoutDiscountType] = useState<"percentage" | "amount">("amount")
   const [checkoutDiscountValue, setCheckoutDiscountValue] = useState(0)
+  const [checkoutVatPercent, setCheckoutVatPercent] = useState(DEFAULT_VAT_PERCENT)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [businesses, setBusinesses] = useState<any[]>([])
+  const [companySearch, setCompanySearch] = useState("")
+
+  const referencedOrders = selectedBill?.restaurantOrders || []
+  const reference = orderReference(referencedOrders)
+  const inclusiveSubtotal = selectedBill
+    ? selectedBill.roomCharges + selectedBill.restaurantInclusive
+    : 0
+  const billTotals = useMemo(
+    () =>
+      calculateInclusiveVat({
+        inclusiveSubtotal,
+        vatPercent: checkoutVatPercent,
+        discountType: checkoutDiscountType,
+        discountValue: checkoutDiscountValue,
+      }),
+    [inclusiveSubtotal, checkoutVatPercent, checkoutDiscountType, checkoutDiscountValue]
+  )
+  const discountTooLarge = isDiscountTooLarge({
+    inclusiveSubtotal,
+    vatPercent: checkoutVatPercent,
+    discountType: checkoutDiscountType,
+    discountValue: checkoutDiscountValue,
+  })
+  const selectedBillAmounts = selectedBill
+    ? {
+        ...billTotals,
+        restaurantTotal: selectedBill.restaurantInclusive,
+        vat: billTotals.vatAmount,
+        discountAmount: billTotals.discountAmount,
+        exclusiveAmount: billTotals.discountedExclusive,
+        totalAmount: billTotals.total,
+        serviceTax: 0,
+      }
+    : null
+
+  const applyOrderReference = (orders: any[]) => {
+    const next = orderReference(orders)
+    setCheckoutDiscountType(next.discountType)
+    setCheckoutDiscountValue(next.discountValue)
+    setCheckoutVatPercent(next.vatPercent)
+  }
+
+  const updateBillGuest = (patch: Record<string, unknown>) => {
+    setSelectedBill((current) =>
+      current
+        ? { ...current, booking: { ...current.booking, ...patch } }
+        : current
+    )
+  }
+
+  const selectCompany = (value: string) => {
+    if (value === "none") {
+      updateBillGuest({ businessId: null, business: null })
+      return
+    }
+    const partner = businesses.find((business) => String(business.id) === value)
+    updateBillGuest({
+      businessId: partner?.id || null,
+      business: partner ? { id: partner.id, name: partner.name } : null,
+    })
+  }
 
   useEffect(() => {
     loadData()
@@ -68,9 +159,13 @@ export default function BillingManager() {
       console.log("Active bookings:", activeBookings.map((b: any) => `${b.guest} - Room ${b.roomNumber} - Status: ${b.status}`))
       setBookings(activeBookings)
 
-      const allOrders = await fetchRestaurantOrders()
+      const [allOrders, allBusinesses] = await Promise.all([
+        fetchRestaurantOrders(),
+        fetchBusinesses().catch(() => []),
+      ])
       console.log("🍽️ Billing - All restaurant orders:", allOrders.length)
       setOrders(allOrders)
+      setBusinesses((allBusinesses || []).filter((business: any) => business.active !== false))
       
       // Separate walk-in orders (unpaid only)
       const walkIns = allOrders.filter((order: any) => 
@@ -86,85 +181,60 @@ export default function BillingManager() {
   }
 
   const generateBill = (booking: any) => {
-    // Calculate number of nights
     const checkin = new Date(booking.checkin)
     const checkout = new Date(booking.checkout)
-    const nights = Math.ceil((checkout.getTime() - checkin.getTime()) / (1000 * 60 * 60 * 24))
-
-    // Get room charges
-    const roomCharges = parseFloat(booking.price)
-
-    // Get restaurant orders for this booking (by booking ID OR room number)
-    const roomOrders = orders.filter(order => 
-      (order.bookingId === booking.id || order.roomNumber === booking.roomNumber) && 
+    const nights = Math.max(1, Math.ceil((checkout.getTime() - checkin.getTime()) / (1000 * 60 * 60 * 24)))
+    const roomCharges = parseFloat(booking.price) || 0
+    const roomOrders = orders.filter((order) =>
+      (order.bookingId === booking.id || order.roomNumber === booking.roomNumber) &&
       order.status !== "cancelled"
     )
-    
-    console.log(`🍽️ Orders for ${booking.guest} (Room ${booking.roomNumber}):`, roomOrders.length, "orders found")
+    const restaurantInclusive = roomOrders.reduce((sum, order) => sum + orderInclusiveSubtotal(order), 0)
 
-    const restaurantTotal = roomOrders.reduce((sum, order) => sum + order.total, 0)
-    const inclusiveSubtotal = roomCharges + restaurantTotal
-    const totals = calculateInclusiveVat({
-      inclusiveSubtotal,
-      vatPercent: 13,
-      discountType: checkoutDiscountType,
-      discountValue: checkoutDiscountValue
-    })
-
-    const bill: Bill = {
+    applyOrderReference(roomOrders)
+    setCompanySearch("")
+    setRoomPaymentStatus("paid")
+    setRoomPaymentMethod("cash")
+    setRestaurantPaymentStatus("paid")
+    setRestaurantPaymentMethod("cash")
+    setSelectedBill({
       booking,
       roomCharges,
       numberOfNights: nights,
       restaurantOrders: roomOrders,
-      restaurantTotal,
-      subtotal: inclusiveSubtotal,
-      serviceTax: 0,
-      vat: totals.vatAmount,
-      exclusiveAmount: totals.discountedExclusive,
-      discountAmount: totals.discountAmount,
-      totalAmount: totals.total
-    }
-
-    // Reset payment states to defaults
-    setRoomPaymentStatus("paid")
-    setRoomPaymentMethod("cash")
-    setRestaurantPaymentStatus("paid")
-    setRestaurantPaymentMethod("cash")
-    
-    setSelectedBill(bill)
+      restaurantInclusive,
+      restaurantTotal: restaurantInclusive,
+    })
     setShowBillDialog(true)
   }
 
   const generateWalkInBill = (order: any) => {
-    // For walk-in orders, there's no room charge, only restaurant order
-    const bill: Bill = {
-      booking: {
-        guest: order.guestName,
-        roomNumber: order.roomNumber, // This will be the table number
-        checkin: new Date(order.createdAt).toISOString().split('T')[0],
-        checkout: new Date(order.createdAt).toISOString().split('T')[0],
-        price: 0,
-        status: "Walk-in"
-      },
-      roomCharges: 0,
-      numberOfNights: 0,
-      restaurantOrders: [order],
-      restaurantTotal: order.total,
-      subtotal: order.total,
-      serviceTax: 0,
-      vat: 0,
-      exclusiveAmount: order.total,
-      discountAmount: 0,
-      totalAmount: order.total
-    }
-
-    // Reset payment states to defaults
+    applyOrderReference([order])
+    setCompanySearch("")
     setRoomPaymentStatus("paid")
     setRoomPaymentMethod("cash")
     setRestaurantPaymentStatus("paid")
     setRestaurantPaymentMethod("cash")
-    
-    setSelectedBill(bill)
+    setSelectedBill({
+      booking: {
+        guest: order.guestName,
+        email: "",
+        phone: "",
+        businessId: null,
+        business: null,
+        roomNumber: order.roomNumber,
+        checkin: new Date(order.createdAt).toISOString().split("T")[0],
+        checkout: new Date(order.createdAt).toISOString().split("T")[0],
+        price: 0,
+        status: "Walk-in",
+        id: order.id,
+      },
+      roomCharges: 0,
+      numberOfNights: 0,
+      restaurantOrders: [order],
+      restaurantInclusive: orderInclusiveSubtotal(order),
+      restaurantTotal: orderInclusiveSubtotal(order),
+    })
     setShowBillDialog(true)
   }
 
@@ -173,7 +243,7 @@ export default function BillingManager() {
   }
 
   const handleDownloadBill = () => {
-    if (!selectedBill) return
+    if (!selectedBill || !selectedBillAmounts) return
 
     const billContent = `
 DHAMPUS ECO LODGE
@@ -191,28 +261,28 @@ Number of Nights: ${selectedBill.numberOfNights}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ROOM CHARGES:
-${selectedBill.numberOfNights} nights @ NPR ${(selectedBill.roomCharges / selectedBill.numberOfNights).toFixed(2)}/night
+${selectedBill.numberOfNights > 0 ? `${selectedBill.numberOfNights} nights @ NPR ${(selectedBill.roomCharges / selectedBill.numberOfNights).toFixed(2)}/night` : "No room stay"}
 Total Room Charges: NPR ${selectedBill.roomCharges.toFixed(2)}
 
 RESTAURANT & BAR CHARGES:
 ${selectedBill.restaurantOrders.map(order => `
 Order ${order.orderNumber} (${new Date(order.createdAt).toLocaleDateString()})
-${order.items.map((item: any) => `  ${item.quantity}x ${item.name} @ NPR ${item.price}`).join('\n')}
-  Subtotal: NPR ${order.subtotal.toFixed(2)}
-  Tax: NPR ${order.tax.toFixed(2)}
-  Total: NPR ${order.total.toFixed(2)}
+${(order.items || []).map((item: any) => `  ${item.quantity}x ${item.name} @ NPR ${item.price}`).join('\n')}
+  Inclusive subtotal: NPR ${orderInclusiveSubtotal(order).toFixed(2)}
+  Order VAT recorded: NPR ${(order.tax || 0).toFixed(2)} (${order.taxPercentage || 0}%)
+  Order total: NPR ${(order.total || 0).toFixed(2)}
 `).join('\n')}
-Total Restaurant: NPR ${selectedBill.restaurantTotal.toFixed(2)}
+Total Restaurant: NPR ${selectedBill.restaurantInclusive.toFixed(2)}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Inclusive Subtotal: NPR ${selectedBill.subtotal.toFixed(2)}
-Discount: NPR ${selectedBill.discountAmount.toFixed(2)}
-VAT exclusive: NPR ${selectedBill.exclusiveAmount.toFixed(2)}
-VAT (13% inclusive): NPR ${selectedBill.vat.toFixed(2)}
+Inclusive Subtotal: NPR ${selectedBillAmounts.inclusiveSubtotal.toFixed(2)}
+Discount: NPR ${selectedBillAmounts.discountAmount.toFixed(2)}
+VAT exclusive: NPR ${selectedBillAmounts.exclusiveAmount.toFixed(2)}
+VAT (${checkoutVatPercent}% inclusive): NPR ${selectedBillAmounts.vat.toFixed(2)}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TOTAL AMOUNT: NPR ${selectedBill.totalAmount.toFixed(2)}
+TOTAL AMOUNT: NPR ${selectedBillAmounts.totalAmount.toFixed(2)}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Thank you for staying with us!
@@ -226,11 +296,57 @@ Thank you for staying with us!
     link.click()
   }
 
+  const persistOrderCheckout = async (
+    order: any,
+    paymentStatus: string,
+    paymentMethod: string | null,
+    writeBillTotals: boolean
+  ) => {
+    const payload: Record<string, unknown> = {
+      paymentStatus,
+      paymentMethod,
+      guestName: selectedBill?.booking.guest || order.guestName,
+    }
+    if (writeBillTotals && selectedBillAmounts) {
+      payload.discountType = checkoutDiscountType
+      payload.discountValue = checkoutDiscountValue
+      payload.discountAmount = selectedBillAmounts.discountAmount
+      payload.tax = selectedBillAmounts.vat
+      payload.taxPercentage = checkoutVatPercent
+      payload.total = selectedBillAmounts.totalAmount
+    }
+    await fetch(`/api/restaurant/orders/${order.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+  }
+
+  const allocatedDues = () => {
+    if (!selectedBill || !selectedBillAmounts) {
+      return { roomDue: 0, restaurantDue: 0 }
+    }
+    const sourceTotal = selectedBill.roomCharges + selectedBill.restaurantInclusive
+    if (sourceTotal <= 0) {
+      return { roomDue: 0, restaurantDue: selectedBillAmounts.totalAmount }
+    }
+    const roomDue = roundMoney(selectedBillAmounts.totalAmount * (selectedBill.roomCharges / sourceTotal))
+    return {
+      roomDue,
+      restaurantDue: roundMoney(selectedBillAmounts.totalAmount - roomDue),
+    }
+  }
+
   const handleCheckout = async () => {
-    if (!selectedBill) return
+    if (!selectedBill || !selectedBillAmounts) return
+    if (discountTooLarge) {
+      alert("Discount cannot be larger than the VAT-exclusive amount.")
+      return
+    }
 
     try {
       const isWalkIn = selectedBill.booking.status === "Walk-in"
+      const { roomDue, restaurantDue } = allocatedDues()
       
       console.log(`🔵 Starting checkout for ${isWalkIn ? 'walk-in order' : 'booking'}:`, selectedBill.booking.id)
       
@@ -241,14 +357,7 @@ Thank you for staying with us!
         if (restaurantPaymentStatus === "paid") {
           // Update order payment status
           console.log('🔵 Updating order payment status...')
-          await fetch(`/api/restaurant/orders/${order.id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              paymentStatus: 'paid',
-              paymentMethod: restaurantPaymentMethod
-            })
-          })
+          await persistOrderCheckout(order, "paid", restaurantPaymentMethod, true)
           console.log('✅ Order marked as paid')
           
           // Add to accounts
@@ -257,37 +366,30 @@ Thank you for staying with us!
             type: "income",
             category: "food_beverage",
             description: `Walk-in Order #${order.orderNumber} - ${order.roomNumber}`,
-            amount: order.total,
+            amount: selectedBillAmounts.totalAmount,
             currency: "NPR",
             paymentMethod: restaurantPaymentMethod
           })
           console.log('✅ Transaction added to accounts')
           
-          alert(`✅ Walk-in order payment completed!\n\nTotal Paid: NPR ${order.total.toFixed(2)}\nPayment Method: ${restaurantPaymentMethod.toUpperCase()}`)
+          alert(`✅ Walk-in order payment completed!\n\nTotal Paid: NPR ${selectedBillAmounts.totalAmount.toFixed(2)}\nPayment Method: ${restaurantPaymentMethod.toUpperCase()}`)
         } else {
           // Credit payment - create credit account
           console.log('🔵 Creating credit account for walk-in order...')
           
-          await fetch(`/api/restaurant/orders/${order.id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              paymentStatus: 'credit',
-              paymentMethod: 'credit'
-            })
-          })
+          await persistOrderCheckout(order, "credit", "credit", true)
           
           const dueDate = new Date()
           dueDate.setDate(dueDate.getDate() + 30) // 30 days credit period
           
           await createCreditAccount({
-            guestName: order.guestName,
-            guestPhone: order.roomNumber, // Using table number as reference
-            guestEmail: "",
-            guestAddress: "",
-            creditAmount: order.total,
+            guestName: selectedBill.booking.guest || order.guestName,
+            guestPhone: selectedBill.booking.phone || order.roomNumber,
+            guestEmail: selectedBill.booking.email || "",
+            guestAddress: selectedBill.booking.business?.name || "",
+            creditAmount: selectedBillAmounts.totalAmount,
             paidAmount: 0,
-            outstandingBalance: order.total,
+            outstandingBalance: selectedBillAmounts.totalAmount,
             creditDate: new Date().toISOString().split("T")[0],
             dueDate: dueDate.toISOString().split("T")[0],
             status: 'unpaid',
@@ -300,12 +402,12 @@ Thank you for staying with us!
           addNotification(
             "payment",
             "New Credit Account",
-            `Walk-in: ${order.guestName} - NPR ${order.total.toFixed(2)} due on ${dueDate.toISOString().split("T")[0]}`,
+            `Walk-in: ${order.guestName} - NPR ${selectedBillAmounts.totalAmount.toFixed(2)} due on ${dueDate.toISOString().split("T")[0]}`,
             "medium",
             "accounts"
           )
           
-          alert(`✅ Walk-in order on credit!\n\nTotal Amount: NPR ${order.total.toFixed(2)}\nDue Date: ${dueDate.toISOString().split("T")[0]}\n\n💳 Credit account created in AMS → Credit Tracking`)
+          alert(`✅ Walk-in order on credit!\n\nTotal Amount: NPR ${selectedBillAmounts.totalAmount.toFixed(2)}\nDue Date: ${dueDate.toISOString().split("T")[0]}\n\n💳 Credit account created in AMS → Credit Tracking`)
         }
         
         setShowPaymentDialog(false)
@@ -317,8 +419,25 @@ Thank you for staying with us!
       // Regular booking checkout
       // Mark booking as checked out
       console.log('🔵 Updating booking status...')
-      await updateBooking(selectedBill.booking.id, { status: "Checked Out" })
+      await updateBooking(selectedBill.booking.id, {
+        status: "Checked Out",
+        guest: selectedBill.booking.guest,
+        email: selectedBill.booking.email || null,
+        phone: selectedBill.booking.phone || null,
+        businessId: selectedBill.booking.businessId || null,
+      })
       console.log('✅ Booking status updated')
+
+      await Promise.all(
+        selectedBill.restaurantOrders.map((order) =>
+          persistOrderCheckout(
+            order,
+            restaurantPaymentStatus === "paid" ? "paid" : "credit",
+            restaurantPaymentStatus === "paid" ? restaurantPaymentMethod : "credit",
+            false
+          )
+        )
+      )
       
       let paidAmount = 0
       let creditAmount = 0
@@ -332,21 +451,21 @@ Thank you for staying with us!
           type: "income",
           category: "room_booking",
           description: `Room ${selectedBill.booking.roomNumber} - ${selectedBill.booking.guest} (${selectedBill.numberOfNights} nights)`,
-          amount: selectedBill.roomCharges,
+          amount: roomDue,
           currency: "NPR",
           paymentMethod: roomPaymentMethod
         })
         console.log('✅ Room transaction created')
-        paidAmount += selectedBill.roomCharges
-        paymentSummary.push(`Room: NPR ${selectedBill.roomCharges.toFixed(2)} (${roomPaymentMethod.toUpperCase()})`)
+        paidAmount += roomDue
+        paymentSummary.push(`Room: NPR ${roomDue.toFixed(2)} (${roomPaymentMethod.toUpperCase()})`)
       } else {
         // Create credit account for room charges
-        creditAmount += selectedBill.roomCharges
-        paymentSummary.push(`Room: NPR ${selectedBill.roomCharges.toFixed(2)} (CREDIT)`)
+        creditAmount += roomDue
+        paymentSummary.push(`Room: NPR ${roomDue.toFixed(2)} (CREDIT)`)
       }
       
       // Add restaurant income if any and if paid, or add to credit
-      if (selectedBill.restaurantTotal > 0) {
+      if (restaurantDue > 0) {
         if (restaurantPaymentStatus === "paid") {
           console.log('🔵 Creating restaurant transaction...')
           await createAccountTransaction({
@@ -354,57 +473,17 @@ Thank you for staying with us!
             type: "income",
             category: "restaurant",
             description: `Restaurant orders - Room ${selectedBill.booking.roomNumber} - ${selectedBill.booking.guest}`,
-            amount: selectedBill.restaurantTotal,
+            amount: restaurantDue,
             currency: "NPR",
             paymentMethod: restaurantPaymentMethod
           })
           console.log('✅ Restaurant transaction created')
-          paidAmount += selectedBill.restaurantTotal
-          paymentSummary.push(`Restaurant: NPR ${selectedBill.restaurantTotal.toFixed(2)} (${restaurantPaymentMethod.toUpperCase()})`)
+          paidAmount += restaurantDue
+          paymentSummary.push(`Restaurant: NPR ${restaurantDue.toFixed(2)} (${restaurantPaymentMethod.toUpperCase()})`)
         } else {
-          creditAmount += selectedBill.restaurantTotal
-          paymentSummary.push(`Restaurant: NPR ${selectedBill.restaurantTotal.toFixed(2)} (CREDIT)`)
+          creditAmount += restaurantDue
+          paymentSummary.push(`Restaurant: NPR ${restaurantDue.toFixed(2)} (CREDIT)`)
         }
-      }
-      
-      // Add taxes as income (split proportionally if mixed payment)
-      console.log('🔵 Processing taxes...')
-      const taxTotal = selectedBill.serviceTax + selectedBill.vat
-      if (roomPaymentStatus === "paid" && restaurantPaymentStatus === "paid") {
-        // Both paid - record all taxes
-        console.log('🔵 Creating tax transaction (all paid)...')
-        await createAccountTransaction({
-          date: new Date().toISOString().split("T")[0],
-          type: "income",
-          category: "other",
-          description: `Service Charge & VAT - Room ${selectedBill.booking.roomNumber}`,
-          amount: taxTotal,
-          currency: "NPR",
-          paymentMethod: roomPaymentMethod
-        })
-        console.log('✅ Tax transaction created')
-        paidAmount += taxTotal
-      } else if (roomPaymentStatus === "credit" && restaurantPaymentStatus === "credit") {
-        // Both credit - no tax recorded
-        console.log('🔵 Both on credit, adding tax to credit amount')
-        creditAmount += taxTotal
-      } else {
-        // Mixed - split taxes proportionally
-        console.log('🔵 Creating tax transaction (partial)...')
-        const paidRatio = paidAmount / (selectedBill.roomCharges + selectedBill.restaurantTotal)
-        const taxPaid = taxTotal * paidRatio
-        await createAccountTransaction({
-          date: new Date().toISOString().split("T")[0],
-          type: "income",
-          category: "other",
-          description: `Service Charge & VAT (Partial) - Room ${selectedBill.booking.roomNumber}`,
-          amount: taxPaid,
-          currency: "NPR",
-          paymentMethod: roomPaymentStatus === "paid" ? roomPaymentMethod : restaurantPaymentMethod
-        })
-        console.log('✅ Tax transaction created')
-        paidAmount += taxPaid
-        creditAmount += taxTotal - taxPaid
       }
       
       // CREATE CREDIT ACCOUNT if there's any credit amount
@@ -425,7 +504,7 @@ Thank you for staying with us!
           dueDate: dueDate.toISOString().split("T")[0],
           status: 'unpaid',
           bookingId: selectedBill.booking.id,
-          notes: `Checkout credit - Room: ${roomPaymentStatus === "credit" ? `NPR ${selectedBill.roomCharges.toFixed(2)}` : "Paid"}, Restaurant: ${restaurantPaymentStatus === "credit" && selectedBill.restaurantTotal > 0 ? `NPR ${selectedBill.restaurantTotal.toFixed(2)}` : "Paid"}, Taxes: NPR ${(taxTotal * (creditAmount / selectedBill.totalAmount)).toFixed(2)}`
+          notes: `Checkout credit - Room: ${roomPaymentStatus === "credit" ? `NPR ${roomDue.toFixed(2)}` : "Paid"}, Restaurant: ${restaurantPaymentStatus === "credit" && restaurantDue > 0 ? `NPR ${restaurantDue.toFixed(2)}` : "Paid"}`
         })
         console.log('✅ Credit account created')
         
@@ -443,7 +522,7 @@ Thank you for staying with us!
       
       // Build alert message
       let alertMessage = `✅ Guest checked out successfully!\n\n`
-      alertMessage += `Total Amount: NPR ${selectedBill.totalAmount.toFixed(2)}\n\n`
+      alertMessage += `Total Amount: NPR ${selectedBillAmounts.totalAmount.toFixed(2)}\n\n`
       alertMessage += `--- Payment Breakdown ---\n`
       paymentSummary.forEach(line => alertMessage += `${line}\n`)
       alertMessage += `\n💰 Paid: NPR ${paidAmount.toFixed(2)}`
@@ -474,6 +553,12 @@ Thank you for staying with us!
         <h2 className="text-xl sm:text-2xl font-bold">Billing & Checkout</h2>
       </div>
 
+      <AdminSearch
+        value={searchQuery}
+        onChange={setSearchQuery}
+        placeholder="Search guest, room, or phone..."
+      />
+
       <Card>
         <CardHeader>
           <CardTitle>Active Bookings - Ready for Checkout</CardTitle>
@@ -499,7 +584,7 @@ Thank you for staying with us!
                 </div>
               </div>
             ) : (
-              bookings.map((booking) => {
+              bookings.filter((booking) => matchesSearch(searchQuery, booking.guest, booking.roomNumber, booking.room, booking.email, booking.phone, booking.status)).map((booking) => {
                 const roomOrders = orders.filter(o => o.roomNumber === booking.roomNumber)
                 const restaurantTotal = roomOrders.reduce((sum, order) => sum + order.total, 0)
                 
@@ -533,11 +618,11 @@ Thank you for staying with us!
                           <div>
                             <p className="text-sm text-gray-600">Estimated Total</p>
                             <p className="text-2xl font-bold text-primary">
-                              NPR {((parseFloat(booking.price) + restaurantTotal) * 1.23).toFixed(2)}
+                              NPR {(parseFloat(booking.price) + restaurantTotal).toFixed(2)}
                             </p>
-                            <p className="text-xs text-gray-500">(incl. taxes)</p>
+                            <p className="text-xs text-gray-500">(VAT inclusive)</p>
                           </div>
-                          <Button onClick={() => { setCheckoutDiscountType("amount"); setCheckoutDiscountValue(0); generateBill(booking) }} className="w-full">
+                          <Button onClick={() => generateBill(booking)} className="w-full">
                             <Receipt className="w-4 h-4 mr-2" />
                             Generate Bill
                           </Button>
@@ -564,7 +649,7 @@ Thank you for staying with us!
                 No pending walk-in orders
               </div>
             ) : (
-              walkInOrders.map((order) => (
+              walkInOrders.filter((order) => matchesSearch(searchQuery, order.guestName, order.roomNumber, order.orderNumber, order.status)).map((order) => (
                 <Card key={order.id} className="border-l-4 border-l-blue-500">
                   <CardContent className="pt-6">
                     <div className="flex justify-between items-start">
@@ -630,15 +715,72 @@ Thank you for staying with us!
                 <p className="text-xs text-gray-500 mt-2">Tax Invoice / Bill</p>
               </div>
 
-              {/* Guest & Booking Info */}
               <div className="grid md:grid-cols-2 gap-6">
                 <div>
                   <h3 className="font-semibold mb-2">Guest Information</h3>
-                  <div className="space-y-1 text-sm">
-                    <p><span className="text-gray-600">Name:</span> <span className="font-medium">{selectedBill.booking.guest}</span></p>
-                    <p><span className="text-gray-600">Email:</span> {selectedBill.booking.email || 'N/A'}</p>
-                    <p><span className="text-gray-600">Phone:</span> {selectedBill.booking.phone || 'N/A'}</p>
-                    <p><span className="text-gray-600">Company:</span> {selectedBill.booking.business?.name || 'N/A'}</p>
+                  <div className="space-y-3 text-sm">
+                    <div className="space-y-1">
+                      <Label htmlFor="bill-guest-name">Name</Label>
+                      <Input
+                        id="bill-guest-name"
+                        value={selectedBill.booking.guest || ""}
+                        onChange={(e) => updateBillGuest({ guest: e.target.value })}
+                        className="h-9 print:border-0 print:shadow-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="bill-guest-email">Email</Label>
+                      <Input
+                        id="bill-guest-email"
+                        type="email"
+                        placeholder="N/A"
+                        value={selectedBill.booking.email || ""}
+                        onChange={(e) => updateBillGuest({ email: e.target.value })}
+                        className="h-9 print:border-0 print:shadow-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="bill-guest-phone">Phone</Label>
+                      <Input
+                        id="bill-guest-phone"
+                        placeholder="N/A"
+                        value={selectedBill.booking.phone || ""}
+                        onChange={(e) => updateBillGuest({ phone: e.target.value })}
+                        className="h-9 print:border-0 print:shadow-none"
+                      />
+                    </div>
+                    <div className="space-y-1 print:hidden">
+                      <Label>Company</Label>
+                      <AdminSearch
+                        value={companySearch}
+                        onChange={setCompanySearch}
+                        placeholder="Search business partners..."
+                        className="mb-2"
+                      />
+                      <Select
+                        value={selectedBill.booking.businessId ? String(selectedBill.booking.businessId) : "none"}
+                        onValueChange={selectCompany}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select from business partners" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">N/A</SelectItem>
+                          {businesses
+                            .filter((business) =>
+                              matchesSearch(companySearch, business.name, business.phone, business.contactPerson, business.email)
+                            )
+                            .map((business) => (
+                              <SelectItem key={business.id} value={String(business.id)}>
+                                {business.name}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <p className="hidden print:block">
+                      <span className="text-gray-600">Company:</span> {selectedBill.booking.business?.name || "N/A"}
+                    </p>
                     <p><span className="text-gray-600">Meal plan:</span> {mealPlanLabel(selectedBill.booking.bookingType)}</p>
                     <p><span className="text-gray-600">Room:</span> <span className="font-medium">{selectedBill.booking.roomNumber}</span></p>
                   </div>
@@ -654,16 +796,18 @@ Thank you for staying with us!
                 </div>
               </div>
 
-              {/* Room Charges */}
-              <div className="border rounded-lg p-4 bg-gray-50">
-                <h3 className="font-semibold mb-3">Room Charges</h3>
-                <div className="flex justify-between text-sm mb-1">
-                  <span>{selectedBill.numberOfNights} nights @ NPR {(selectedBill.roomCharges / selectedBill.numberOfNights).toFixed(2)}/night</span>
-                  <span className="font-semibold">NPR {selectedBill.roomCharges.toFixed(2)}</span>
+              {selectedBill.roomCharges > 0 && (
+                <div className="border rounded-lg p-4 bg-gray-50">
+                  <h3 className="font-semibold mb-3">Room Charges</h3>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span>
+                      {selectedBill.numberOfNights} night{selectedBill.numberOfNights === 1 ? "" : "s"} @ NPR {(selectedBill.roomCharges / selectedBill.numberOfNights).toFixed(2)}/night
+                    </span>
+                    <span className="font-semibold">NPR {selectedBill.roomCharges.toFixed(2)}</span>
+                  </div>
                 </div>
-              </div>
+              )}
 
-              {/* Restaurant Charges */}
               {selectedBill.restaurantOrders.length > 0 && (
                 <div className="border rounded-lg p-4 bg-gray-50">
                   <h3 className="font-semibold mb-3">Restaurant & Bar Charges</h3>
@@ -674,33 +818,42 @@ Thank you for staying with us!
                           <span>Order {order.orderNumber}</span>
                           <span>{new Date(order.createdAt).toLocaleDateString()}</span>
                         </div>
-                        {order.items.map((item: any, idx: number) => (
+                        {(order.items || []).map((item: any, idx: number) => (
                           <div key={idx} className="flex justify-between text-xs text-gray-600 ml-4">
                             <span>{item.quantity}x {item.name} @ NPR {item.price}</span>
                             <span>NPR {(item.quantity * item.price).toFixed(2)}</span>
                           </div>
                         ))}
                         <div className="flex justify-between text-xs text-gray-600 ml-4 mt-1">
-                          <span>Tax ({order.taxPercentage}%)</span>
-                          <span>NPR {order.tax.toFixed(2)}</span>
+                          <span>Order VAT recorded ({order.taxPercentage || 0}%)</span>
+                          <span>NPR {(order.tax || 0).toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between text-sm font-semibold ml-4 mt-1">
-                          <span>Order Total</span>
-                          <span>NPR {order.total.toFixed(2)}</span>
+                          <span>Order inclusive total</span>
+                          <span>NPR {orderInclusiveSubtotal(order).toFixed(2)}</span>
                         </div>
                       </div>
                     ))}
                     <div className="flex justify-between font-semibold pt-2">
                       <span>Total Restaurant Charges</span>
-                      <span>NPR {selectedBill.restaurantTotal.toFixed(2)}</span>
+                      <span>NPR {selectedBill.restaurantInclusive.toFixed(2)}</span>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Total Calculation */}
               <div className="border rounded-lg p-4 space-y-3 print:hidden">
                 <h3 className="font-semibold">Checkout discount / VAT</h3>
+                {reference.labels.length > 0 ? (
+                  <p className="text-sm text-gray-600">
+                    Referenced from order {reference.labels.join(", ")}. Recorded order VAT is NPR {reference.storedVat.toFixed(2)}.
+                    VAT here is taken from that order and is not added on top of the inclusive prices.
+                  </p>
+                ) : (
+                  <p className="text-sm text-gray-600">
+                    No restaurant order to reference. Enter VAT for these inclusive prices, or leave 13%.
+                  </p>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label>Discount type</Label>
@@ -724,40 +877,58 @@ Thank you for staying with us!
                       onChange={(e) => setCheckoutDiscountValue(parseFloat(e.target.value) || 0)}
                     />
                   </div>
+                  <div className="space-y-2">
+                    <Label>VAT %</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      value={checkoutVatPercent}
+                      onChange={(e) => setCheckoutVatPercent(Math.max(0, parseFloat(e.target.value) || 0))}
+                    />
+                  </div>
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => selectedBill.booking.status === "Walk-in" ? generateWalkInBill(selectedBill.restaurantOrders[0]) : generateBill(selectedBill.booking)}
-                >
-                  Recalculate bill
-                </Button>
+                {discountTooLarge && (
+                  <p className="text-sm text-red-600">Discount cannot be larger than the VAT-exclusive amount.</p>
+                )}
+                {reference.labels.length > 0 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => applyOrderReference(selectedBill.restaurantOrders)}
+                  >
+                    Use order VAT & discount
+                  </Button>
+                )}
               </div>
 
-              <div className="border-t-2 pt-4 space-y-2">
-                <div className="flex justify-between text-lg">
-                  <span>Inclusive subtotal</span>
-                  <span className="font-semibold">NPR {selectedBill.subtotal.toFixed(2)}</span>
-                </div>
-                {selectedBill.discountAmount > 0 && (
-                  <div className="flex justify-between text-sm text-green-700">
-                    <span>Discount (on exclusive)</span>
-                    <span>- NPR {selectedBill.discountAmount.toFixed(2)}</span>
+              {selectedBillAmounts && (
+                <div className="border-t-2 pt-4 space-y-2">
+                  <div className="flex justify-between text-lg">
+                    <span>Inclusive subtotal</span>
+                    <span className="font-semibold">NPR {selectedBillAmounts.inclusiveSubtotal.toFixed(2)}</span>
                   </div>
-                )}
-                <div className="flex justify-between text-sm text-gray-600">
-                  <span>VAT exclusive amount</span>
-                  <span>NPR {selectedBill.exclusiveAmount.toFixed(2)}</span>
+                  {selectedBillAmounts.discountAmount > 0 && (
+                    <div className="flex justify-between text-sm text-green-700">
+                      <span>Discount (on exclusive)</span>
+                      <span>- NPR {selectedBillAmounts.discountAmount.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-sm text-gray-600">
+                    <span>VAT exclusive amount</span>
+                    <span>NPR {selectedBillAmounts.exclusiveAmount.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm text-gray-600">
+                    <span>VAT ({checkoutVatPercent}% inclusive)</span>
+                    <span>NPR {selectedBillAmounts.vat.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-2xl font-bold text-primary border-t-2 pt-3 mt-3">
+                    <span>TOTAL AMOUNT</span>
+                    <span>NPR {selectedBillAmounts.totalAmount.toFixed(2)}</span>
+                  </div>
                 </div>
-                <div className="flex justify-between text-sm text-gray-600">
-                  <span>VAT (13% inclusive)</span>
-                  <span>NPR {selectedBill.vat.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-2xl font-bold text-primary border-t-2 pt-3 mt-3">
-                  <span>TOTAL AMOUNT</span>
-                  <span>NPR {selectedBill.totalAmount.toFixed(2)}</span>
-                </div>
-              </div>
+              )}
 
               {/* Footer */}
               <div className="text-center text-sm text-gray-600 border-t pt-4">
@@ -777,6 +948,7 @@ Thank you for staying with us!
                 </Button>
                 <Button 
                   onClick={() => setShowPaymentDialog(true)}
+                  disabled={discountTooLarge}
                   className="flex-1 bg-green-600 hover:bg-green-700"
                 >
                   <Check className="w-4 h-4 mr-2" />
@@ -795,21 +967,22 @@ Thank you for staying with us!
             <DialogTitle>Checkout Payment</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            {selectedBill && (
+            {selectedBill && selectedBillAmounts && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <p className="text-sm text-gray-600">Total Amount</p>
-                <p className="text-2xl sm:text-3xl font-bold text-primary break-words">NPR {selectedBill.totalAmount.toFixed(2)}</p>
+                <p className="text-2xl sm:text-3xl font-bold text-primary break-words">NPR {selectedBillAmounts.totalAmount.toFixed(2)}</p>
                 <p className="text-xs text-gray-500 mt-1 break-words">
-                  Room: NPR {selectedBill.roomCharges.toFixed(2)} + Restaurant: NPR {selectedBill.restaurantTotal.toFixed(2)} + Taxes: NPR {(selectedBill.serviceTax + selectedBill.vat).toFixed(2)}
+                  Inclusive prices only. VAT NPR {selectedBillAmounts.vat.toFixed(2)} is already included
+                  {selectedBillAmounts.discountAmount > 0 ? `, after NPR ${selectedBillAmounts.discountAmount.toFixed(2)} discount` : ""}.
                 </p>
               </div>
             )}
 
-            {/* Room Payment */}
+            {selectedBill && selectedBill.roomCharges > 0 && (
             <div className="border border-gray-200 rounded-lg p-4 space-y-3">
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1">
                 <h4 className="font-semibold">🏨 Room Charges</h4>
-                <p className="text-lg font-bold">NPR {selectedBill?.roomCharges.toFixed(2)}</p>
+                <p className="text-lg font-bold">NPR {allocatedDues().roomDue.toFixed(2)}</p>
               </div>
               
               <div className="grid grid-cols-2 gap-3">
@@ -844,13 +1017,13 @@ Thank you for staying with us!
                 )}
               </div>
             </div>
+            )}
 
-            {/* Restaurant Payment */}
-            {selectedBill && selectedBill.restaurantTotal > 0 && (
+            {selectedBill && selectedBill.restaurantInclusive > 0 && (
               <div className="border border-gray-200 rounded-lg p-4 space-y-3">
                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1">
                   <h4 className="font-semibold">🍽️ Restaurant & Bar</h4>
-                  <p className="text-lg font-bold">NPR {selectedBill.restaurantTotal.toFixed(2)}</p>
+                  <p className="text-lg font-bold">NPR {allocatedDues().restaurantDue.toFixed(2)}</p>
                 </div>
                 
                 <div className="grid grid-cols-2 gap-3">
@@ -888,23 +1061,29 @@ Thank you for staying with us!
             )}
 
             {/* Summary */}
-            {selectedBill && (
+            {selectedBill && selectedBillAmounts && (
               <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
                 <p className="text-xs font-semibold text-gray-600 mb-2">PAYMENT SUMMARY</p>
                 <div className="space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <span>Room ({roomPaymentStatus === "paid" ? roomPaymentMethod.toUpperCase() : "CREDIT"}):</span>
-                    <span className="font-semibold">NPR {selectedBill.roomCharges.toFixed(2)}</span>
-                  </div>
-                  {selectedBill.restaurantTotal > 0 && (
+                  {selectedBill.roomCharges > 0 && (
+                    <div className="flex justify-between">
+                      <span>Room ({roomPaymentStatus === "paid" ? roomPaymentMethod.toUpperCase() : "CREDIT"}):</span>
+                      <span className="font-semibold">NPR {allocatedDues().roomDue.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {selectedBill.restaurantInclusive > 0 && (
                     <div className="flex justify-between">
                       <span>Restaurant ({restaurantPaymentStatus === "paid" ? restaurantPaymentMethod.toUpperCase() : "CREDIT"}):</span>
-                      <span className="font-semibold">NPR {selectedBill.restaurantTotal.toFixed(2)}</span>
+                      <span className="font-semibold">NPR {allocatedDues().restaurantDue.toFixed(2)}</span>
                     </div>
                   )}
                   <div className="flex justify-between text-xs text-gray-600">
-                    <span>Taxes (auto-calculated):</span>
-                    <span>NPR {(selectedBill.serviceTax + selectedBill.vat).toFixed(2)}</span>
+                    <span>VAT included at {checkoutVatPercent}%:</span>
+                    <span>NPR {selectedBillAmounts.vat.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-semibold pt-1">
+                    <span>Total</span>
+                    <span>NPR {selectedBillAmounts.totalAmount.toFixed(2)}</span>
                   </div>
                 </div>
               </div>
@@ -921,6 +1100,7 @@ Thank you for staying with us!
               </Button>
               <Button 
                 onClick={handleCheckout}
+                disabled={discountTooLarge}
                 className="flex-1 bg-green-600 hover:bg-green-700"
               >
                 <Check className="w-4 h-4 mr-2" />

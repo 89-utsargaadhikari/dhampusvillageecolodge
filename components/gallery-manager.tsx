@@ -9,10 +9,12 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { AdminSearch, matchesSearch } from "@/components/admin-search"
 
 export default function GalleryManager() {
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
   const [imagePreview, setImagePreview] = useState<string>("")
   const [formData, setFormData] = useState({
     alt: "",
@@ -102,8 +104,14 @@ export default function GalleryManager() {
         </Button>
       </div>
 
+      <AdminSearch
+        value={searchQuery}
+        onChange={setSearchQuery}
+        placeholder="Search gallery titles or categories..."
+      />
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {galleryItems.map((item) => (
+        {galleryItems.filter((item) => matchesSearch(searchQuery, (item as any).title, item.alt, item.category)).map((item) => (
           <div key={item.id} className="bg-white rounded-lg shadow overflow-hidden group">
             <div className="relative overflow-hidden h-48">
               <img

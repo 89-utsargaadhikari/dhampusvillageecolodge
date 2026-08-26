@@ -6,6 +6,7 @@ import AdminHeader from "@/components/admin-header"
 import AdminSidebar from "@/components/admin-sidebar"
 import DashboardOverview from "@/components/dashboard-overview"
 import BookingsManager from "@/components/bookings-manager"
+import OperationsCalendar from "@/components/operations-calendar"
 import RoomsManager from "@/components/rooms-manager"
 import RoomStatusDashboard from "@/components/room-status-dashboard"
 import RoomInventoryManager from "@/components/room-inventory-manager"
@@ -21,7 +22,7 @@ import BusinessPartners from "@/components/business-partners"
 import BusinessBookings from "@/components/business-bookings"
 import FinancialReports from "@/components/financial-reports"
 
-type AdminTab = "overview" | "bookings" | "rooms" | "room-inventory" | "room-status" | "restaurant" | "inventory" | "billing" | "accounts" | "financial-reports" | "business-partners" | "business-bookings" | "gallery" | "hero" | "settings" | "storage"
+type AdminTab = "overview" | "bookings" | "calendar" | "rooms" | "room-inventory" | "room-status" | "restaurant" | "inventory" | "billing" | "accounts" | "financial-reports" | "business-partners" | "business-bookings" | "gallery" | "hero" | "settings" | "storage"
 
 export default function AdminDashboard() {
   const router = useRouter()
@@ -85,6 +86,7 @@ export default function AdminDashboard() {
         <main className="flex-1 overflow-auto p-3 sm:p-4 md:p-6 min-w-0">
           {activeTab === "overview" && <DashboardOverview key="overview" />}
           {activeTab === "bookings" && <BookingsManager key="bookings" />}
+          {activeTab === "calendar" && <OperationsCalendar key="calendar" />}
           {activeTab === "rooms" && <RoomsManager key="rooms" />}
           {activeTab === "room-inventory" && <RoomInventoryManager key="room-inventory" />}
           {activeTab === "room-status" && <RoomStatusDashboard key="room-status" />}

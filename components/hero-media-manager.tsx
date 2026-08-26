@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { AdminSearch, matchesSearch } from "@/components/admin-search"
 
 interface HeroMedia {
   id: number
@@ -21,6 +22,7 @@ export default function HeroMediaManager() {
     url: "",
   })
   const [loading, setLoading] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
 
   useEffect(() => {
     fetchHeroMedia()
@@ -194,7 +196,12 @@ export default function HeroMediaManager() {
             These will display in {heroMedia.length > 1 ? "random order or as slideshow" : "the hero section"}
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <AdminSearch
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search hero images or videos..."
+          />
           {heroMedia.length === 0 ? (
             <div className="text-center py-12 text-gray-500">
               <ImageIcon className="w-12 h-12 mx-auto mb-3 opacity-50" />
@@ -202,7 +209,7 @@ export default function HeroMediaManager() {
             </div>
           ) : (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {heroMedia.map((media) => (
+              {heroMedia.filter((media) => matchesSearch(searchQuery, media.type, media.url)).map((media) => (
                 <div
                   key={media.id}
                   className="group relative border-2 border-gray-200 rounded-lg overflow-hidden hover:border-yellow-400 transition-all"

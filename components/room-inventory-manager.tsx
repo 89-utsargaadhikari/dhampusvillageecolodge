@@ -6,6 +6,7 @@ import { type Room, type RoomInventoryItem } from "@/lib/storage"
 import { 
   fetchRooms, 
   fetchRoomInventory, 
+  createRoom,
   createRoomInventoryItem,
   bulkUpdateRoomInventory, 
   deleteRoomInventoryItem 
@@ -13,14 +14,17 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { canonicalizeRoomTypeName, isCatalogRoomType } from "@/lib/hotel"
+import RoomTypeCombobox from "@/components/room-type-combobox"
+import { AdminSearch, matchesSearch } from "@/components/admin-search"
 
 export default function RoomInventoryManager() {
   const [roomTypes, setRoomTypes] = useState<Room[]>([])
   const [inventory, setInventory] = useState<RoomInventoryItem[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
   const [editingItem, setEditingItem] = useState<RoomInventoryItem | null>(null)
   const [formData, setFormData] = useState({
     roomNumber: "",
@@ -48,7 +52,11 @@ export default function RoomInventoryManager() {
     }
   }
 
-  const handleOpenDialog = (item?: RoomInventoryItem) => {
+  const handleOpenDialog = (item?: RoomInventoryItem, presetTypeId?: string) => {
+    fetchRooms()
+      .then(setRoomTypes)
+      .catch(() => {})
+
     if (item) {
       setEditingItem(item)
       setFormData({
@@ -61,7 +69,7 @@ export default function RoomInventoryManager() {
       setEditingItem(null)
       setFormData({
         roomNumber: "",
-        roomTypeId: roomTypes[0]?.id.toString() || "",
+        roomTypeId: presetTypeId || "",
         floor: "",
         notes: "",
       })
@@ -69,11 +77,36 @@ export default function RoomInventoryManager() {
     setIsDialogOpen(true)
   }
 
+  const handleCreateRoomType = async (name: string) => {
+    try {
+      const created = await createRoom({ name: canonicalizeRoomTypeName(name) || name })
+      setRoomTypes((prev) => prev.some((room) => room.id === created.id) ? prev : [...prev, created])
+      setFormData((prev) => ({ ...prev, roomTypeId: String(created.id) }))
+    } catch (error) {
+      try {
+        const roomsData = await fetchRooms()
+        setRoomTypes(roomsData)
+        const match = roomsData.find(
+          (room: Room) => room.name.toLowerCase() === name.toLowerCase()
+        )
+        if (match) {
+          setFormData((prev) => ({ ...prev, roomTypeId: String(match.id) }))
+        }
+      } catch {
+        // Keep the original create error
+      }
+      throw error
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     const selectedRoom = roomTypes.find((r) => r.id.toString() === formData.roomTypeId)
-    if (!selectedRoom) return
+    if (!selectedRoom) {
+      alert("Please select or create a room type")
+      return
+    }
 
     const newItem = {
       roomNumber: formData.roomNumber,
@@ -122,10 +155,19 @@ export default function RoomInventoryManager() {
   }
 
   // Group inventory by room type
-  const inventoryByType = roomTypes.map((type) => ({
-    ...type,
-    rooms: inventory.filter((item) => item.roomTypeId === type.id),
-  }))
+  const inventoryByType = roomTypes
+    .map((type) => ({
+      ...type,
+      rooms: inventory.filter((item) =>
+        item.roomTypeId === type.id &&
+        matchesSearch(searchQuery, item.roomNumber, type.name, item.floor, item.notes)
+      ),
+    }))
+    .filter((type) => {
+      const hasRooms = type.rooms.length > 0
+      if (searchQuery.trim()) return hasRooms
+      return isCatalogRoomType(type.name) || hasRooms
+    })
 
   return (
     <div className="space-y-6">
@@ -141,7 +183,7 @@ export default function RoomInventoryManager() {
       </div>
 
       {/* Statistics */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <Card>
           <CardContent className="pt-6">
             <div className="text-center">
@@ -150,7 +192,7 @@ export default function RoomInventoryManager() {
             </div>
           </CardContent>
         </Card>
-        {roomTypes.slice(0, 3).map((type) => {
+        {roomTypes.slice(0, 4).map((type) => {
           const count = inventory.filter((item) => item.roomTypeId === type.id).length
           return (
             <Card key={type.id}>
@@ -165,8 +207,17 @@ export default function RoomInventoryManager() {
         })}
       </div>
 
+      <AdminSearch
+        value={searchQuery}
+        onChange={setSearchQuery}
+        placeholder="Search room numbers, types, floors..."
+      />
+
       {/* Inventory by Room Type */}
       <div className="space-y-6">
+        {inventoryByType.length === 0 && searchQuery && (
+          <p className="text-center text-gray-500 py-6">No rooms match “{searchQuery}”.</p>
+        )}
         {inventoryByType.map((type) => (
           <Card key={type.id}>
             <CardHeader>
@@ -182,10 +233,7 @@ export default function RoomInventoryManager() {
                   <DoorOpen className="w-12 h-12 mx-auto mb-2 text-gray-400" />
                   <p>No room numbers assigned yet</p>
                   <Button
-                    onClick={() => {
-                      setFormData({ ...formData, roomTypeId: type.id.toString() })
-                      handleOpenDialog()
-                    }}
+                    onClick={() => handleOpenDialog(undefined, type.id.toString())}
                     variant="outline"
                     size="sm"
                     className="mt-4"
@@ -312,22 +360,13 @@ export default function RoomInventoryManager() {
 
             <div className="space-y-2">
               <Label htmlFor="roomType">Room Type *</Label>
-              <Select
+              <RoomTypeCombobox
+                roomTypes={roomTypes}
                 value={formData.roomTypeId}
-                onValueChange={(value) => setFormData({ ...formData, roomTypeId: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select room type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {roomTypes.map((type) => (
-                    <SelectItem key={type.id} value={type.id.toString()}>
-                      {type.name} - ${type.price}/night
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-gray-500">Which room type is this room number?</p>
+                onChange={(roomTypeId) => setFormData({ ...formData, roomTypeId })}
+                onCreate={handleCreateRoomType}
+              />
+              <p className="text-xs text-gray-500">Choose Standard Room or Deluxe Room. Occupancy (SGL/DBL/TRPL) is chosen on the booking.</p>
             </div>
 
             <div className="space-y-2">
@@ -369,11 +408,10 @@ export default function RoomInventoryManager() {
           <div className="space-y-2">
             <h3 className="font-semibold text-blue-900">💡 How to Use Room Inventory</h3>
             <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
-              <li>Click "Add Room Number" to add individual rooms (102, 108, 109, etc.)</li>
-              <li>Assign each room number to a room type (Deluxe, Premium, etc.)</li>
-              <li>When booking, the system will show available rooms for the selected type</li>
-              <li>Example: Add rooms 102, 108, 109 as "Deluxe Room" type</li>
-              <li>When guest books Deluxe, you can assign 102, 108, or 109</li>
+              <li>Click "Add Room Number" to add a physical door (101, 102, 201)</li>
+              <li>Assign it to Standard Room or Deluxe Room</li>
+              <li>On the booking, pick occupancy (SGL, DBL, or TRPL) for that stay</li>
+              <li>When checking a guest in, only rooms of that type are offered</li>
             </ol>
           </div>
         </CardContent>

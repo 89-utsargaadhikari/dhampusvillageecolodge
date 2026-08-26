@@ -6,6 +6,7 @@ import Link from "next/link"
 import { Star, Wifi, Mountain, Flame, Droplet } from "lucide-react"
 import { type Room } from "@/lib/storage"
 import { fetchRooms } from "@/lib/api"
+import { currencySymbol, isGuestFacingRoom } from "@/lib/hotel"
 
 const featureIcons: Record<string, React.ReactNode> = {
   "Mountain View": <Mountain size={16} />,
@@ -27,7 +28,7 @@ export default function Rooms() {
   const loadRooms = async () => {
     try {
       const roomsData = await fetchRooms()
-      setRooms(roomsData)
+      setRooms(roomsData.filter(isGuestFacingRoom))
     } catch (error) {
       console.error('Failed to load rooms:', error)
     }
@@ -125,7 +126,7 @@ export default function Rooms() {
                   <div>
                     <p className="text-xs text-gray-500 mb-1">Starting from</p>
                     <p className="font-display text-2xl sm:text-3xl font-bold bg-gradient-to-r from-green-600 to-yellow-600 bg-clip-text text-transparent">
-                      ${room.price}
+                      {currencySymbol(room.currency)} {room.price}
                     </p>
                     <p className="text-xs text-gray-500">per night</p>
                   </div>

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Bell, Check, Trash2, X } from "lucide-react"
+import { AdminSearch, matchesSearch } from "@/components/admin-search"
 import { 
   getNotifications, 
   markAsRead, 
@@ -19,6 +20,7 @@ export default function NotificationPanel({ onNotificationClick }: NotificationP
   const [isOpen, setIsOpen] = useState(false)
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
+  const [searchQuery, setSearchQuery] = useState("")
 
   const loadNotifications = () => {
     setNotifications(getNotifications())
@@ -143,15 +145,23 @@ export default function NotificationPanel({ onNotificationClick }: NotificationP
               </div>
             </div>
 
+            <div className="px-4 py-3 border-b border-gray-100">
+              <AdminSearch
+                value={searchQuery}
+                onChange={setSearchQuery}
+                placeholder="Search notifications..."
+              />
+            </div>
+
             {/* Notifications List */}
             <div className="overflow-y-auto max-h-[500px]">
-              {notifications.length === 0 ? (
+              {notifications.filter((notification) => matchesSearch(searchQuery, notification.title, notification.message, notification.type)).length === 0 ? (
                 <div className="p-8 text-center text-gray-500">
                   <Bell size={48} className="mx-auto mb-4 opacity-20" />
-                  <p className="text-sm">No notifications yet</p>
+                  <p className="text-sm">{searchQuery ? `No notifications match “${searchQuery}”` : "No notifications yet"}</p>
                 </div>
               ) : (
-                notifications.map((notification) => (
+                notifications.filter((notification) => matchesSearch(searchQuery, notification.title, notification.message, notification.type)).map((notification) => (
                   <div
                     key={notification.id}
                     onClick={() => handleNotificationClick(notification)}

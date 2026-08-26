@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { AdminSearch, matchesSearch } from "@/components/admin-search"
 import { 
   fetchPurchases, 
   fetchSales, 
@@ -68,6 +69,7 @@ export default function FinancialReports() {
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [staff, setStaff] = useState<Staff[]>([])
   const [selectedMonth, setSelectedMonth] = useState("all")
+  const [searchQuery, setSearchQuery] = useState("")
   const [isPurchaseDialogOpen, setIsPurchaseDialogOpen] = useState(false)
   const [isSaleDialogOpen, setIsSaleDialogOpen] = useState(false)
   const [isVendorDialogOpen, setIsVendorDialogOpen] = useState(false)
@@ -103,6 +105,13 @@ export default function FinancialReports() {
   const filteredSales = selectedMonth && selectedMonth !== "all"
     ? sales.filter(s => s.month === selectedMonth)
     : sales
+
+  const visiblePurchases = filteredPurchases.filter((p) =>
+    matchesSearch(searchQuery, p.invoiceNo, p.vendorName, p.paymentMode, p.paymentStatus)
+  )
+  const visibleSales = filteredSales.filter((s) =>
+    matchesSearch(searchQuery, s.staffName, s.paymentMode, s.category)
+  )
 
   // Purchase statistics by vendor
   const purchasesByVendor = filteredPurchases.reduce((acc, p) => {
@@ -212,6 +221,12 @@ export default function FinancialReports() {
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <h2 className="text-xl sm:text-2xl font-bold">Financial Reports</h2>
         <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+          <AdminSearch
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search vendor, invoice, staff..."
+            className="sm:w-64"
+          />
           <Select value={selectedMonth} onValueChange={setSelectedMonth}>
             <SelectTrigger className="w-full sm:w-48">
               <SelectValue placeholder="All Months" />
@@ -334,7 +349,7 @@ export default function FinancialReports() {
           {/* Detailed Purchase Transactions */}
           <Card>
             <CardHeader>
-              <CardTitle>Purchase Transactions ({filteredPurchases.length})</CardTitle>
+              <CardTitle>Purchase Transactions ({visiblePurchases.length})</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
@@ -353,7 +368,7 @@ export default function FinancialReports() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredPurchases.map((purchase, idx) => (
+                    {visiblePurchases.map((purchase, idx) => (
                       <tr key={purchase.id} className="border-b hover:bg-gray-50">
                         <td className="px-4 py-3">{idx + 1}</td>
                         <td className="px-4 py-3">{purchase.month}</td>
@@ -460,7 +475,7 @@ export default function FinancialReports() {
           {/* Detailed Sales Transactions */}
           <Card>
             <CardHeader>
-              <CardTitle>Sales Transactions ({filteredSales.length})</CardTitle>
+              <CardTitle>Sales Transactions ({visibleSales.length})</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
@@ -478,7 +493,7 @@ export default function FinancialReports() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredSales.map((sale, idx) => (
+                    {visibleSales.map((sale, idx) => (
                       <tr key={sale.id} className="border-b hover:bg-gray-50">
                         <td className="px-4 py-3">{idx + 1}</td>
                         <td className="px-4 py-3">{sale.month}</td>

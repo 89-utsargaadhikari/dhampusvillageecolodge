@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { CURRENCIES, MEAL_PLANS, currencySymbol } from "@/lib/hotel"
+import { CURRENCIES, MEAL_PLANS, catalogRoomTypeNames, currencySymbol } from "@/lib/hotel"
+import { AdminSearch, matchesSearch } from "@/components/admin-search"
 
 interface RateCard {
   id: number
@@ -28,6 +29,7 @@ interface Props {
 export default function RateCardManager({ businessId, businessName, roomTypes }: Props) {
   const [rates, setRates] = useState<RateCard[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
   const [formData, setFormData] = useState({
     roomType: "",
     mealPlan: "EP",
@@ -112,6 +114,11 @@ export default function RateCardManager({ businessId, businessName, roomTypes }:
           Add Rate
         </Button>
       </div>
+      <AdminSearch
+        value={searchQuery}
+        onChange={setSearchQuery}
+        placeholder="Search room type or meal plan..."
+      />
 
       {rates.length === 0 ? (
         <Card className="border-dashed">
@@ -124,7 +131,7 @@ export default function RateCardManager({ businessId, businessName, roomTypes }:
         </Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {Array.isArray(rates) && rates.map((rate) => (
+          {Array.isArray(rates) && rates.filter((rate) => matchesSearch(searchQuery, rate.roomType, rate.mealPlan, rate.currency, MEAL_PLANS.find(p => p.value === rate.mealPlan)?.label)).map((rate) => (
             <Card key={rate.id} className="hover:shadow-md transition-shadow">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex justify-between items-start">
@@ -205,7 +212,7 @@ export default function RateCardManager({ businessId, businessName, roomTypes }:
                   required
                 >
                   <option value="">Select room type</option>
-                  {roomTypes.map((type) => (
+                  {catalogRoomTypeNames().map((type) => (
                     <option key={type} value={type}>{type}</option>
                   ))}
                 </select>

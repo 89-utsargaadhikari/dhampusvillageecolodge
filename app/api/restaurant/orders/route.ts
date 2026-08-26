@@ -7,14 +7,10 @@ export async function GET() {
   try {
     const orders = await prisma.restaurantOrder.findMany({
       include: {
-        items: {
-          include: {
-            menuItem: true
-          }
-        }
+        items: true
       },
       orderBy: {
-        orderDate: 'desc'
+        createdAt: 'desc'
       }
     })
     return NextResponse.json(orders)

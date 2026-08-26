@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { Plus, Package, AlertTriangle, AlertCircle, Calendar, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
@@ -47,6 +48,7 @@ export default function InventoryManager() {
   const [items, setItems] = useState<InventoryItem[]>([])
   const [filteredItems, setFilteredItems] = useState<InventoryItem[]>([])
   const [selectedCategory, setSelectedCategory] = useState<string>("all")
+  const [searchQuery, setSearchQuery] = useState("")
   const [showForm, setShowForm] = useState(false)
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null)
   const [updatingItem, setUpdatingItem] = useState<InventoryItem | null>(null)
@@ -58,12 +60,18 @@ export default function InventoryManager() {
   }, [])
 
   useEffect(() => {
-    if (selectedCategory === "all") {
-      setFilteredItems(items)
-    } else {
-      setFilteredItems(items.filter(item => item.category === selectedCategory))
-    }
-  }, [selectedCategory, items])
+    const q = searchQuery.trim().toLowerCase()
+    setFilteredItems(items.filter((item) => {
+      const matchesCategory = selectedCategory === "all" || item.category === selectedCategory
+      const matchesSearch =
+        !q ||
+        item.name.toLowerCase().includes(q) ||
+        item.category.toLowerCase().includes(q) ||
+        (item.storageLocation || "").toLowerCase().includes(q) ||
+        (item.menuItem?.name || "").toLowerCase().includes(q)
+      return matchesCategory && matchesSearch
+    }))
+  }, [selectedCategory, items, searchQuery])
 
   const fetchItems = async () => {
     try {
@@ -263,6 +271,15 @@ export default function InventoryManager() {
       <Card>
         <CardContent className="pt-6">
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search inventory items..."
+                className="pl-9"
+              />
+            </div>
             <label className="text-sm font-medium">Filter by Category:</label>
             <Select value={selectedCategory} onValueChange={setSelectedCategory}>
               <SelectTrigger className="w-full sm:w-64">
@@ -291,7 +308,9 @@ export default function InventoryManager() {
             <Package className="w-16 h-16 mx-auto mb-4 text-gray-300" />
             <p className="text-gray-600 text-lg mb-2">No inventory items yet</p>
             <p className="text-gray-500 text-sm mb-4">
-              {selectedCategory === "all" 
+              {searchQuery
+                ? `No items match “${searchQuery}”`
+                : selectedCategory === "all" 
                 ? "Start by adding your first inventory item"
                 : "No items in this category"}
             </p>

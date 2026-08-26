@@ -1,9 +1,11 @@
 "use client"
 
-import { LayoutDashboard, Calendar, Bed, ImageIcon, ArrowLeft, Video, Settings, DoorOpen, Hash, HardDrive, UtensilsCrossed, Wallet, Receipt, X, Building2, Briefcase, Package, TrendingUp } from "lucide-react"
+import { useState } from "react"
+import { LayoutDashboard, Calendar, CalendarDays, Bed, ImageIcon, ArrowLeft, Video, Settings, DoorOpen, Hash, HardDrive, UtensilsCrossed, Wallet, Receipt, X, Building2, Briefcase, Package, TrendingUp, Search } from "lucide-react"
 import Link from "next/link"
+import { matchesSearch } from "@/components/admin-search"
 
-type AdminTab = "overview" | "bookings" | "rooms" | "room-inventory" | "room-status" | "restaurant" | "inventory" | "billing" | "accounts" | "financial-reports" | "business-partners" | "business-bookings" | "gallery" | "hero" | "settings" | "storage"
+type AdminTab = "overview" | "bookings" | "calendar" | "rooms" | "room-inventory" | "room-status" | "restaurant" | "inventory" | "billing" | "accounts" | "financial-reports" | "business-partners" | "business-bookings" | "gallery" | "hero" | "settings" | "storage"
 
 interface AdminSidebarProps {
   activeTab: AdminTab
@@ -13,9 +15,11 @@ interface AdminSidebarProps {
 }
 
 export default function AdminSidebar({ activeTab, setActiveTab, isOpen, onClose }: AdminSidebarProps) {
+  const [navSearch, setNavSearch] = useState("")
   const menuItems = [
     { id: "overview", label: "Dashboard", icon: LayoutDashboard },
     { id: "bookings", label: "Bookings", icon: Calendar },
+    { id: "calendar", label: "Calendar", icon: CalendarDays },
     { id: "rooms", label: "Rooms", icon: Bed },
     { id: "room-inventory", label: "Room Numbers", icon: Hash },
     { id: "room-status", label: "Room Status", icon: DoorOpen },
@@ -67,7 +71,19 @@ export default function AdminSidebar({ activeTab, setActiveTab, isOpen, onClose 
         </div>
 
         <nav className="flex-1 px-3 sm:px-4 py-4 sm:py-8 space-y-1 sm:space-y-2 overflow-y-auto">
-          {menuItems.map((item) => (
+          <div className="relative mb-3">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            <input
+              value={navSearch}
+              onChange={(e) => setNavSearch(e.target.value)}
+              placeholder="Search pages..."
+              className="w-full bg-gray-800 text-white text-sm rounded-lg pl-9 pr-3 py-2 placeholder:text-gray-500 outline-none focus:ring-1 focus:ring-green-600"
+            />
+          </div>
+          {menuItems.filter((item) => matchesSearch(navSearch, item.label)).length === 0 && (
+            <p className="px-4 py-2 text-sm text-gray-500">No pages match “{navSearch}”.</p>
+          )}
+          {menuItems.filter((item) => matchesSearch(navSearch, item.label)).map((item) => (
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}

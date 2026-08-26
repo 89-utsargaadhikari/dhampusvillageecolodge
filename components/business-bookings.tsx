@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Plus, Search, Building2, Users, X } from "lucide-react"
+import { Plus, Building2, Users, X } from "lucide-react"
+import { AdminSearch, matchesSearch } from "@/components/admin-search"
 import { fetchBusinesses, fetchBookings, createBooking, fetchRooms, fetchRoomInventory } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -10,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { CURRENCIES, MEAL_PLANS, OCCUPANCY_TYPES, mealPlanLabel } from "@/lib/hotel"
+import { CURRENCIES, MEAL_PLANS, OCCUPANCY_TYPES, mealPlanLabel, picklistRoomTypes } from "@/lib/hotel"
 
 interface Business {
   id: number
@@ -30,6 +31,8 @@ export default function BusinessBookings() {
   const [bookings, setBookings] = useState<any[]>([])
   const [rooms, setRooms] = useState<any[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [partnerSearch, setPartnerSearch] = useState("")
   const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null)
   const [availableRoomNumbers, setAvailableRoomNumbers] = useState<{ [key: number]: string[] }>({})
   
@@ -254,6 +257,12 @@ export default function BusinessBookings() {
         </Card>
       </div>
 
+      <AdminSearch
+        value={searchQuery}
+        onChange={setSearchQuery}
+        placeholder="Search guest, company, room..."
+      />
+
       {/* Bookings Table */}
       <Card>
         <CardHeader>
@@ -276,7 +285,15 @@ export default function BusinessBookings() {
                 </tr>
               </thead>
               <tbody>
-                {bookings.map((booking) => (
+                {bookings.filter((booking) => matchesSearch(
+                  searchQuery,
+                  booking.guest,
+                  booking.room,
+                  booking.roomNumber,
+                  booking.status,
+                  booking.bookingType,
+                  businesses.find(b => b.id === booking.businessId)?.name
+                )).map((booking) => (
                   <tr key={booking.id} className="border-b hover:bg-muted/50">
                     <td className="p-2">{booking.guest}</td>
                     <td className="p-2">
@@ -307,6 +324,17 @@ export default function BusinessBookings() {
             {bookings.length === 0 && (
               <p className="text-center text-muted-foreground py-8">No business bookings yet</p>
             )}
+            {bookings.length > 0 && bookings.filter((booking) => matchesSearch(
+              searchQuery,
+              booking.guest,
+              booking.room,
+              booking.roomNumber,
+              booking.status,
+              booking.bookingType,
+              businesses.find(b => b.id === booking.businessId)?.name
+            )).length === 0 && (
+              <p className="text-center text-muted-foreground py-8">No bookings match “{searchQuery}”</p>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -321,12 +349,18 @@ export default function BusinessBookings() {
             {/* Business Selection */}
             <div>
               <Label htmlFor="businessId">Business Partner *</Label>
+              <AdminSearch
+                value={partnerSearch}
+                onChange={setPartnerSearch}
+                placeholder="Search partners..."
+                className="mb-2"
+              />
               <Select value={formData.businessId} onValueChange={handleBusinessSelect} required>
                 <SelectTrigger>
                   <SelectValue placeholder="Select business" />
                 </SelectTrigger>
                 <SelectContent>
-                  {businesses.map((business) => (
+                  {businesses.filter((business) => matchesSearch(partnerSearch, business.name)).map((business) => (
                     <SelectItem key={business.id} value={business.id.toString()}>
                       {business.name}
                     </SelectItem>
@@ -498,7 +532,7 @@ export default function BusinessBookings() {
                             <SelectValue placeholder="Select room type" />
                           </SelectTrigger>
                           <SelectContent>
-                            {rooms.map((room) => (
+                            {picklistRoomTypes(rooms, roomBooking.room).map((room) => (
                               <SelectItem key={room.id} value={room.name}>
                                 {room.name}
                               </SelectItem>

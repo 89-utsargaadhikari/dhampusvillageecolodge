@@ -29,37 +29,26 @@ async function main() {
   })
   console.log('✓ Hero settings created')
 
-  // Create sample rooms
   const rooms = [
     {
-      name: 'Deluxe Room',
-      price: '5000',
-      description: 'Spacious room with mountain views and modern amenities',
-      capacity: 2,
-      status: 'Available',
-      features: JSON.stringify(['King Bed', 'Mountain View', 'WiFi', 'Hot Shower']),
-      rating: 4.5,
-      image: '/elegant-room-interior-nepal.jpg',
-    },
-    {
-      name: 'Luxury Suite',
-      price: '8000',
-      description: 'Premium suite with panoramic Annapurna views',
-      capacity: 3,
-      status: 'Available',
-      features: JSON.stringify(['King Bed', 'Annapurna View', 'WiFi', 'Balcony', 'Mini Bar']),
-      rating: 5.0,
-      image: '/luxury-suite-annapurna-view-nepal.jpg',
-    },
-    {
       name: 'Standard Room',
-      price: '3500',
-      description: 'Comfortable room with essential amenities',
+      price: '0',
+      description: 'Standard room',
       capacity: 2,
       status: 'Available',
-      features: JSON.stringify(['Double Bed', 'WiFi', 'Hot Shower']),
-      rating: 4.0,
-      image: '/cottage-style-mountain-lodge-nepal.jpg',
+      features: JSON.stringify(['Standard Room']),
+      rating: 0,
+      image: '/placeholder.svg',
+    },
+    {
+      name: 'Deluxe Room',
+      price: '0',
+      description: 'Deluxe room',
+      capacity: 2,
+      status: 'Available',
+      features: JSON.stringify(['Deluxe Room']),
+      rating: 0,
+      image: '/placeholder.svg',
     },
   ]
 

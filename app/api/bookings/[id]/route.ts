@@ -12,7 +12,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     if (body.email !== undefined) updateData.email = body.email
     if (body.phone !== undefined) updateData.phone = body.phone
     if (body.room !== undefined) updateData.room = body.room
-    if (body.roomNumber !== undefined) updateData.roomNumber = body.roomNumber
+    if (body.roomNumber !== undefined) updateData.roomNumber = body.roomNumber || null
     if (body.checkin !== undefined) updateData.checkin = body.checkin
     if (body.checkout !== undefined) updateData.checkout = body.checkout
     if (body.price !== undefined) updateData.price = String(body.price)
