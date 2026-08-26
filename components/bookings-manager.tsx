@@ -12,7 +12,7 @@ import {
   fetchRoomInventory,
   fetchBusinesses
 } from "@/lib/api"
-import { BOOKING_SOURCES, BOOKING_STATUSES, CURRENCIES, MEAL_PLANS, OCCUPANCY_TYPES, currencySymbol, defaultOccupancyForRoomType, formatMoney, picklistRoomTypes, stayNightsAndDays } from "@/lib/hotel"
+import { BOOKING_SOURCES, BOOKING_STATUSES, CURRENCIES, MEAL_PLANS, OCCUPANCY_TYPES, currencySymbol, formatMoney, nightlyRateFromStayTotal, occupancyForPax, parseStayDate, paxForOccupancy, picklistRoomTypes, stayNightsAndDays, stayTotalFromNightlyRate } from "@/lib/hotel"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -40,7 +40,7 @@ function emptyRoomLine(room = ""): RoomLine {
   return {
     room,
     roomNumber: "",
-    occupancy: "DBL",
+    occupancy: "SGL",
     numberOfGuests: "1",
     extraBed: false,
     price: "",
@@ -104,8 +104,8 @@ function mealPlanCode(code?: string | null) {
 
 function formatDateShort(value?: string | null) {
   if (!value) return null
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
+  const date = parseStayDate(value)
+  if (!date) return value
   return date.toLocaleDateString("en-GB", { day: "numeric", month: "short" })
 }
 
@@ -196,7 +196,7 @@ export default function BookingsManager() {
     try {
       const [bookingsData, roomsData, businessesData, inventoryData] = await Promise.all([
         fetchBookings(),
-        fetchRooms(),
+        fetchRooms().catch(() => []),
         fetchBusinesses().catch(() => []),
         fetchRoomInventory().catch(() => []),
       ])
@@ -266,10 +266,10 @@ export default function BookingsManager() {
           id: member.id,
           room: member.room,
           roomNumber: member.roomNumber || "",
-          occupancy: member.occupancy || "DBL",
-          numberOfGuests: String(member.numberOfGuests || 1),
+          occupancy: member.occupancy || occupancyForPax(Number(member.numberOfGuests) || 1),
+          numberOfGuests: String(member.numberOfGuests || paxForOccupancy(member.occupancy)),
           extraBed: Boolean(member.extraBed),
-          price: member.price || "",
+          price: member.price ? String(nightlyRateFromStayTotal(member.price, primary.checkin, primary.checkout)) : "",
         })),
       })
     } else {
@@ -311,6 +311,11 @@ export default function BookingsManager() {
 
     const editingIds = new Set(formData.rooms.map((line) => line.id).filter(Boolean) as number[])
 
+    if (checkinDate && checkoutDate && checkoutDate <= checkinDate) {
+      alert("Check-out date must be after check-in date.")
+      return
+    }
+
     if (checkinDate && checkoutDate) {
       for (const line of formData.rooms) {
         if (!line.roomNumber) continue
@@ -340,7 +345,7 @@ export default function BookingsManager() {
       occupancy: line.occupancy,
       numberOfGuests: line.numberOfGuests,
       extraBed: line.extraBed,
-      price: line.price || "0",
+      price: String(stayTotalFromNightlyRate(line.price, formData.checkin, formData.checkout)),
     }))
 
     try {
@@ -528,6 +533,13 @@ export default function BookingsManager() {
 
   const totalRate = (members: Booking[]) =>
     members.reduce((sum, member) => sum + parseFloat(member.price || "0"), 0)
+
+  const formStay = stayNightsAndDays(formData.checkin, formData.checkout)
+  const formNights = formStay.nights != null && formStay.nights > 0 ? formStay.nights : null
+  const formStayTotal = formData.rooms.reduce(
+    (sum, line) => sum + stayTotalFromNightlyRate(line.price, formData.checkin, formData.checkout),
+    0
+  )
 
   return (
     <div className="space-y-5">
@@ -737,7 +749,7 @@ export default function BookingsManager() {
                                 <th className="px-3 py-2">Occ.</th>
                                 <th className="px-3 py-2">Pax</th>
                                 <th className="px-3 py-2">Room #</th>
-                                <th className="px-3 py-2 text-right">Rate</th>
+                                <th className="px-3 py-2 text-right">Stay total</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -860,7 +872,7 @@ export default function BookingsManager() {
                       <Label>Room type</Label>
                       <Select
                         value={line.room || undefined}
-                        onValueChange={(value) => updateRoomLine(index, { room: value, roomNumber: "", occupancy: defaultOccupancyForRoomType(value) })}
+                        onValueChange={(value) => updateRoomLine(index, { room: value, roomNumber: "" })}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Select a room type" />
@@ -876,7 +888,10 @@ export default function BookingsManager() {
                     </div>
                     <div className="min-w-0 space-y-2">
                       <Label>Occupancy</Label>
-                      <Select value={line.occupancy || undefined} onValueChange={(value) => updateRoomLine(index, { occupancy: value })}>
+                      <Select
+                        value={line.occupancy || undefined}
+                        onValueChange={(value) => updateRoomLine(index, { occupancy: value, numberOfGuests: String(paxForOccupancy(value)) })}
+                      >
                         <SelectTrigger>
                           <SelectValue placeholder="Occupancy" />
                         </SelectTrigger>
@@ -896,7 +911,13 @@ export default function BookingsManager() {
                         type="number"
                         min="1"
                         value={line.numberOfGuests}
-                        onChange={(e) => updateRoomLine(index, { numberOfGuests: e.target.value })}
+                        onChange={(e) => {
+                          const pax = Math.max(1, parseInt(e.target.value) || 1)
+                          updateRoomLine(index, {
+                            numberOfGuests: String(pax),
+                            occupancy: occupancyForPax(pax, line.occupancy),
+                          })
+                        }}
                       />
                     </div>
                     <div className="flex items-end pb-2">
@@ -910,7 +931,7 @@ export default function BookingsManager() {
                       </label>
                     </div>
                     <div className="min-w-0 space-y-2">
-                      <Label>Rate</Label>
+                      <Label>Rate / night</Label>
                       <div className="flex items-center">
                         <span className="px-3 py-2 bg-gray-100 border border-r-0 rounded-l-md text-sm">{currencySymbol(formData.currency)}</span>
                         <Input
@@ -920,13 +941,26 @@ export default function BookingsManager() {
                           value={line.price}
                           onChange={(e) => updateRoomLine(index, { price: e.target.value })}
                           className="rounded-l-none"
-                          placeholder="Custom / partner rate"
+                          placeholder="Nightly rate"
                         />
                       </div>
+                      {formNights ? (
+                        <p className="text-xs text-gray-500">
+                          {formNights} night{formNights === 1 ? "" : "s"} × {formatMoney(line.price || 0, formData.currency)} = {formatMoney(stayTotalFromNightlyRate(line.price, formData.checkin, formData.checkout), formData.currency)}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-gray-500">Stay total uses check-in and check-out dates.</p>
+                      )}
                     </div>
                   </div>
                 </div>
               ))}
+              {formNights ? (
+                <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm">
+                  <span className="text-gray-600">Stay total ({formNights} night{formNights === 1 ? "" : "s"})</span>
+                  <span className="font-semibold text-gray-900">{formatMoney(formStayTotal, formData.currency)}</span>
+                </div>
+              ) : null}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

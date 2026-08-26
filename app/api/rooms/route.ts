@@ -34,7 +34,13 @@ async function syncRoomIdSequence() {
 // GET /api/rooms - Get all rooms
 export async function GET() {
   try {
-    const rooms = await ensureStandardRoomTypes()
+    let rooms
+    try {
+      rooms = await ensureStandardRoomTypes()
+    } catch (error) {
+      console.error('ensureStandardRoomTypes failed, falling back to existing rooms:', error)
+      rooms = await prisma.room.findMany({ orderBy: { id: 'asc' } })
+    }
     return NextResponse.json(rooms.map(formatRoom))
   } catch (error) {
     console.error('Error fetching rooms:', error)

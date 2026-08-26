@@ -19,7 +19,7 @@ import {
   referencedVatPercent,
   roundMoney,
 } from "@/lib/vat"
-import { mealPlanLabel } from "@/lib/hotel"
+import { mealPlanLabel, stayNightsCount, formatMoney } from "@/lib/hotel"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -181,9 +181,7 @@ export default function BillingManager() {
   }
 
   const generateBill = (booking: any) => {
-    const checkin = new Date(booking.checkin)
-    const checkout = new Date(booking.checkout)
-    const nights = Math.max(1, Math.ceil((checkout.getTime() - checkin.getTime()) / (1000 * 60 * 60 * 24)))
+    const nights = stayNightsCount(booking.checkin, booking.checkout)
     const roomCharges = parseFloat(booking.price) || 0
     const roomOrders = orders.filter((order) =>
       (order.bookingId === booking.id || order.roomNumber === booking.roomNumber) &&
@@ -261,8 +259,8 @@ Number of Nights: ${selectedBill.numberOfNights}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ROOM CHARGES:
-${selectedBill.numberOfNights > 0 ? `${selectedBill.numberOfNights} nights @ NPR ${(selectedBill.roomCharges / selectedBill.numberOfNights).toFixed(2)}/night` : "No room stay"}
-Total Room Charges: NPR ${selectedBill.roomCharges.toFixed(2)}
+${selectedBill.numberOfNights > 0 ? `${selectedBill.numberOfNights} nights @ ${(selectedBill.roomCharges / selectedBill.numberOfNights).toFixed(2)}/night` : "No room stay"}
+Total Room Charges: ${formatMoney(selectedBill.roomCharges, selectedBill.booking.currency)}
 
 RESTAURANT & BAR CHARGES:
 ${selectedBill.restaurantOrders.map(order => `
@@ -602,7 +600,7 @@ Thank you for staying with us!
                           <div className="flex gap-4 text-sm">
                             <div>
                               <span className="text-gray-600">Room: </span>
-                              <span className="font-semibold">NPR {parseFloat(booking.price).toFixed(2)}</span>
+                              <span className="font-semibold">{formatMoney(booking.price, booking.currency)}</span>
                             </div>
                             <div>
                               <span className="text-gray-600">Restaurant: </span>
@@ -618,7 +616,7 @@ Thank you for staying with us!
                           <div>
                             <p className="text-sm text-gray-600">Estimated Total</p>
                             <p className="text-2xl font-bold text-primary">
-                              NPR {(parseFloat(booking.price) + restaurantTotal).toFixed(2)}
+                              {formatMoney((parseFloat(booking.price) || 0) + restaurantTotal, booking.currency || "NPR")}
                             </p>
                             <p className="text-xs text-gray-500">(VAT inclusive)</p>
                           </div>
@@ -801,9 +799,9 @@ Thank you for staying with us!
                   <h3 className="font-semibold mb-3">Room Charges</h3>
                   <div className="flex justify-between text-sm mb-1">
                     <span>
-                      {selectedBill.numberOfNights} night{selectedBill.numberOfNights === 1 ? "" : "s"} @ NPR {(selectedBill.roomCharges / selectedBill.numberOfNights).toFixed(2)}/night
+                      {selectedBill.numberOfNights} night{selectedBill.numberOfNights === 1 ? "" : "s"} @ {formatMoney(selectedBill.roomCharges / selectedBill.numberOfNights, selectedBill.booking.currency)}/night
                     </span>
-                    <span className="font-semibold">NPR {selectedBill.roomCharges.toFixed(2)}</span>
+                    <span className="font-semibold">{formatMoney(selectedBill.roomCharges, selectedBill.booking.currency)}</span>
                   </div>
                 </div>
               )}

@@ -5,7 +5,7 @@ import Link from "next/link"
 import { Calendar, Users, Mail, Phone, User, CreditCard, CheckCircle, Sparkles, Star } from "lucide-react"
 import { type Room } from "@/lib/storage"
 import { fetchRooms, createBooking } from "@/lib/api"
-import { currencySymbol, isGuestFacingRoom } from "@/lib/hotel"
+import { currencySymbol, isGuestFacingRoom, occupancyForPax } from "@/lib/hotel"
 import { addNotification } from "@/lib/notifications"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -124,7 +124,7 @@ export default function BookingPage() {
         bookingSource: "website",
         numberOfGuests: guestCount,
         bookingType: "EP",
-        occupancy: guestCount >= 3 ? "TRPL" : guestCount === 1 ? "SGL" : "DBL",
+        occupancy: occupancyForPax(guestCount),
         currency: selectedRoom.currency || "NPR",
       })
 
