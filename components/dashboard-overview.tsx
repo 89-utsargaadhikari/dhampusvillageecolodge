@@ -13,6 +13,8 @@ import {
 } from "@/lib/api"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { AdminSearch, matchesSearch } from "@/components/admin-search"
+import { formatMoney } from "@/lib/hotel"
+import { AdminLoading, AdminRefreshHint, useAdminLoader } from "@/components/admin-loading"
 
 type StatType = "bookings" | "revenue" | "guests" | "occupancy" | "restaurant" | "accounts" | null
 
@@ -45,6 +47,7 @@ export default function DashboardOverview() {
 
   const [restaurantOrders, setRestaurantOrders] = useState<any[]>([])
   const [accountTransactions, setAccountTransactions] = useState<any[]>([])
+  const { loading, refreshing, run } = useAdminLoader()
 
   useEffect(() => {
     loadData()
@@ -56,6 +59,7 @@ export default function DashboardOverview() {
 
   const loadData = async () => {
     try {
+      await run(async () => {
       const [bookings, roomsData, inventory, orders, transactions, inventoryItems] = await Promise.all([
         fetchBookings(),
         fetchRooms(),
@@ -183,14 +187,18 @@ export default function DashboardOverview() {
         .sort((a, b) => new Date(b.checkin).getTime() - new Date(a.checkin).getTime())
         .slice(0, 5)
       setRecentBookings(recent)
+      })
     } catch (error) {
       console.error('Failed to load dashboard data:', error)
     }
   }
+  if (loading) return <AdminLoading label="Loading dashboard..." />
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
         <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Dashboard Overview</h2>
+        <AdminRefreshHint show={refreshing} />
       </div>
 
       <div className="bg-green-50 border border-green-200 rounded-lg p-4">
@@ -453,7 +461,7 @@ export default function DashboardOverview() {
                           <p className="text-xs text-gray-500">{booking.checkin} to {booking.checkout}</p>
                         </div>
                         <div className="text-right">
-                          <p className="font-bold text-green-600">NPR {parseFloat(booking.price || "0").toLocaleString()}</p>
+                          <p className="font-bold text-green-600">{formatMoney(booking.price, booking.currency)}</p>
                           <span
                             className={`inline-block px-2 py-1 rounded-full text-xs font-semibold mt-1 ${
                               booking.status === "Confirmed"
@@ -490,7 +498,7 @@ export default function DashboardOverview() {
                         <p className="text-xs text-gray-500">{booking.checkin} to {booking.checkout}</p>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold text-green-600 text-lg">NPR {parseFloat(booking.price || "0").toLocaleString()}</p>
+                        <p className="font-bold text-green-600 text-lg">{formatMoney(booking.price, booking.currency)}</p>
                         <p className="text-xs text-gray-500">{booking.status}</p>
                       </div>
                     </div>

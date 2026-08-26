@@ -24,6 +24,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { COUNTABLE_UNITS, isCountableUnit } from "@/lib/inventory-units"
+import { AdminLoading, useAdminLoader } from "@/components/admin-loading"
 
 interface InventoryLink {
   id: number
@@ -96,6 +97,7 @@ export default function RestaurantManager() {
   const [stockQty, setStockQty] = useState<Record<number, string>>({})
   const [linkQty, setLinkQty] = useState<Record<number, string>>({})
   const [linkUnit, setLinkUnit] = useState<Record<number, string>>({})
+  const { loading, run } = useAdminLoader()
 
   // Load data from database
   useEffect(() => {
@@ -104,6 +106,7 @@ export default function RestaurantManager() {
   
   const loadData = async () => {
     try {
+      await run(async () => {
       const [menu, orders, allBookings] = await Promise.all([
         fetchRestaurantMenu(),
         fetchRestaurantOrders(),
@@ -124,6 +127,7 @@ export default function RestaurantManager() {
       console.log('  Available for orders:', checkedInBookings.map((b: any) => `${b.guest} - Room ${b.roomNumber}`))
       
       setBookings(checkedInBookings)
+      })
     } catch (error) {
       console.error('Failed to load data:', error)
       alert('Failed to load restaurant data')
@@ -341,6 +345,8 @@ export default function RestaurantManager() {
       alert(`❌ Failed to update order: ${error.message || 'Unknown error'}`)
     }
   }
+
+  if (loading) return <AdminLoading label="Loading restaurant..." />
 
   return (
     <div className="space-y-6">

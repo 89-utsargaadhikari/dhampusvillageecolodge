@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 import { fetchAccountTransactions, fetchBookings, fetchCreditAccounts, fetchRestaurantOrders, fetchRoomInventory, fetchRooms } from "@/lib/api"
 import { formatMoney, mealPlanLabel, occupancyLabel, stayNightsAndDays } from "@/lib/hotel"
+import { AdminLoading, AdminRefreshHint, useAdminLoader } from "@/components/admin-loading"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -287,15 +288,15 @@ export default function OperationsCalendar() {
   const [showCancelled, setShowCancelled] = useState(false)
   const [roomType, setRoomType] = useState("all")
   const [query, setQuery] = useState("")
-  const [loading, setLoading] = useState(true)
+  const { loading, refreshing, run } = useAdminLoader()
   const [stays, setStays] = useState<Stay[]>([])
   const [rooms, setRooms] = useState<RoomRow[]>([])
   const [events, setEvents] = useState<DayEvent[]>([])
   const [selectedStay, setSelectedStay] = useState<Stay | null>(null)
 
   const load = useCallback(async () => {
-    setLoading(true)
     try {
+      await run(async () => {
       const [bookings, orders, transactions, credits, inventory, roomTypes] = await Promise.all([
         fetchBookings().catch(() => []),
         fetchRestaurantOrders().catch(() => []),
@@ -463,12 +464,11 @@ export default function OperationsCalendar() {
       setStays(nextStays)
       setRooms(nextRooms)
       setEvents(nextEvents)
+      })
     } catch (error) {
       console.error("Failed to load calendar", error)
-    } finally {
-      setLoading(false)
     }
-  }, [])
+  }, [run])
 
   useEffect(() => {
     load()
@@ -617,11 +617,16 @@ export default function OperationsCalendar() {
     setLayers((current) => ({ ...current, [id]: !current[id] }))
   }
 
+  if (loading) return <AdminLoading label="Loading calendar..." />
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Calendar</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Calendar</h2>
+            <AdminRefreshHint show={refreshing} />
+          </div>
           <p className="text-sm text-gray-600 mt-1">
             Today you have {countPhrase(todayCheckins, "check-in", "check-ins")}, {countPhrase(todayCheckouts, "check-out", "check-outs")} and {countPhrase(todayOccupied, "room", "rooms")} occupied.
             {todayUnassigned > 0 ? ` ${todayUnassigned} still need a room number.` : ""}
@@ -659,7 +664,7 @@ export default function OperationsCalendar() {
           </div>
           <Button variant="outline" onClick={goToday}>Today</Button>
           <Button variant="outline" size="icon" onClick={load} aria-label="Refresh">
-            <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+            <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
           </Button>
         </div>
       </div>
@@ -737,10 +742,7 @@ export default function OperationsCalendar() {
         </div>
       )}
 
-      {loading ? (
-        <div className="bg-white rounded-lg border p-12 text-center text-gray-500">Loading calendar…</div>
-      ) : (
-        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-4">
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-4">
           <div className="min-w-0">
             {view === "rooms" && (
               <RoomsTimeline
@@ -792,7 +794,6 @@ export default function OperationsCalendar() {
             onSelectStay={setSelectedStay}
           />
         </div>
-      )}
 
       <Dialog open={Boolean(selectedStay)} onOpenChange={(open) => { if (!open) setSelectedStay(null) }}>
         <DialogContent className="sm:max-w-md">

@@ -14,6 +14,7 @@ import {
   fetchAccountTransactions,
   fetchCreditAccounts
 } from "@/lib/api"
+import { AdminLoading, AdminRefreshHint, useAdminLoader } from "@/components/admin-loading"
 
 export default function StorageManager() {
   const [dbStats, setDbStats] = useState({
@@ -27,7 +28,7 @@ export default function StorageManager() {
     creditAccounts: 0,
     totalRecords: 0
   })
-  const [loading, setLoading] = useState(true)
+  const { loading, refreshing, run } = useAdminLoader()
 
   useEffect(() => {
     loadDatabaseStats()
@@ -35,7 +36,7 @@ export default function StorageManager() {
 
   const loadDatabaseStats = async () => {
     try {
-      setLoading(true)
+      await run(async () => {
       const [
         bookings,
         rooms,
@@ -70,17 +71,21 @@ export default function StorageManager() {
       }
 
       setDbStats(stats)
+      })
     } catch (error) {
       console.error('Failed to load database stats:', error)
-    } finally {
-      setLoading(false)
     }
   }
+
+  if (loading) return <AdminLoading label="Loading database stats..." />
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-        <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Database Management</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Database Management</h2>
+          <AdminRefreshHint show={refreshing} />
+        </div>
         <Button onClick={loadDatabaseStats} variant="outline" className="w-full sm:w-auto">
           Refresh Stats
         </Button>
@@ -111,10 +116,7 @@ export default function StorageManager() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {loading ? (
-            <p className="text-center py-4 text-gray-500">Loading database stats...</p>
-          ) : (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="p-4 bg-blue-50 rounded-lg">
                 <p className="text-sm text-gray-600">Total Records</p>
                 <p className="text-3xl font-bold text-blue-600">{dbStats.totalRecords}</p>
@@ -152,7 +154,6 @@ export default function StorageManager() {
                 <p className="text-3xl font-bold text-red-600">{dbStats.creditAccounts}</p>
               </div>
             </div>
-          )}
         </CardContent>
       </Card>
 

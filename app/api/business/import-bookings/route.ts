@@ -46,6 +46,8 @@ export async function POST(request: Request) {
         const dblPrice = parseFloat(row.DBL || row.dbl || 0)
         const sglPrice = parseFloat(row.SGL || row.sgl || 0)
         const trplPrice = parseFloat(row.TRPL || row.trpl || 0)
+        const currency = (row.Currency || row.currency || "NPR").toString().toUpperCase()
+        const occupancy = trplPrice > 0 ? "TRPL" : dblPrice > 0 ? "DBL" : "SGL"
         const total = parseFloat(row.Total || row.total || (dblPrice + sglPrice + trplPrice))
         const amtBeforeVat = parseFloat(row["Amt Before VAT"] || row.amtBeforeVat || total / 1.13)
         const vatAmount = parseFloat(row["vat amount"] || row.vatAmount || (total - amtBeforeVat))
@@ -62,12 +64,14 @@ export async function POST(request: Request) {
         else if (dblPrice > 0) numberOfGuests = 2
         else if (sglPrice > 0) numberOfGuests = 1
 
-        // Determine booking type from plan
-        const bookingType = plan.toUpperCase().includes("BB") || plan.toUpperCase().includes("BREAKFAST") 
-          ? "Bed & Breakfast" 
-          : "Bed Only"
+        const planCode = String(plan).toUpperCase()
+        const bookingType = planCode.includes("AI") ? "AI"
+          : planCode.includes("MAP") ? "MAP"
+          : planCode.includes("AP") ? "AP"
+          : planCode.includes("BB") || planCode.includes("BREAKFAST") ? "BB"
+          : planCode.includes("CP") ? "CP"
+          : "EP"
 
-        // Create booking
         const booking = await prisma.booking.create({
           data: {
             guest: guestName,
@@ -83,6 +87,8 @@ export async function POST(request: Request) {
             businessId: business.id,
             numberOfGuests,
             bookingType,
+            occupancy,
+            currency,
           },
         })
 
@@ -95,7 +101,7 @@ export async function POST(request: Request) {
             category: "room_booking",
             description: `Business Booking - ${business.name} - ${guestName} - Bill #${billNo}`,
             amount: total,
-            currency: "NPR",
+            currency,
             exchangeRate: 1,
             amountNPR: total,
             paymentMethod: "credit",

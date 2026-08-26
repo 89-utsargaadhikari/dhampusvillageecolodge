@@ -8,6 +8,7 @@ import { currencySymbol } from "@/lib/hotel"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { AdminSearch, matchesSearch } from "@/components/admin-search"
+import { AdminLoading, AdminRefreshHint, useAdminLoader } from "@/components/admin-loading"
 
 type RoomStatus = "available" | "occupied" | "checkout-today" | "checkin-today" | "maintenance" | "cleaning"
 
@@ -29,6 +30,7 @@ export default function RoomStatusDashboard() {
   const [dataIssues, setDataIssues] = useState<string[]>([])
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split("T")[0])
   const [searchQuery, setSearchQuery] = useState("")
+  const { loading, refreshing, run } = useAdminLoader()
 
   useEffect(() => {
     loadData()
@@ -40,6 +42,7 @@ export default function RoomStatusDashboard() {
   
   const loadData = async () => {
     try {
+      await run(async () => {
       console.log('🔄 Room Status: Loading data from database...')
       const [allRooms, allBookings, inventory] = await Promise.all([
         fetchRooms(),
@@ -226,6 +229,7 @@ export default function RoomStatusDashboard() {
     // Sort by room number
     details.sort((a, b) => a.roomNumber.localeCompare(b.roomNumber))
     setRoomDetails(details)
+      })
     } catch (error) {
       console.error('Failed to load room status data:', error)
     }
@@ -317,6 +321,8 @@ export default function RoomStatusDashboard() {
   const isToday = selectedDate === new Date().toISOString().split("T")[0]
   const selectedDateObj = new Date(selectedDate)
 
+  if (loading) return <AdminLoading label="Loading room status..." />
+
   return (
     <div className="space-y-6">
       {/* Header with Date Picker */}
@@ -326,6 +332,7 @@ export default function RoomStatusDashboard() {
           <p className="text-sm text-gray-600 mt-1">
             {isToday ? "Live Status • Today" : "Historical/Future View"}
           </p>
+          <AdminRefreshHint show={refreshing} />
         </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
           <AdminSearch

@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { AdminLoading, useAdminLoader } from "@/components/admin-loading"
+import { Spinner } from "@/components/ui/spinner"
 
 export default function SiteSettingsManager() {
   const [settings, setSettings] = useState<SiteSettings>({
@@ -16,6 +18,8 @@ export default function SiteSettingsManager() {
   })
   const [logoPreview, setLogoPreview] = useState<string>("")
   const [isSaved, setIsSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const { loading, run } = useAdminLoader()
 
   useEffect(() => {
     loadSettings()
@@ -23,11 +27,13 @@ export default function SiteSettingsManager() {
   
   const loadSettings = async () => {
     try {
-      const data = await fetchSiteSettings()
-      if (data) {
-        setSettings(data)
-        setLogoPreview(data.logoImage)
-      }
+      await run(async () => {
+        const data = await fetchSiteSettings()
+        if (data) {
+          setSettings(data)
+          setLogoPreview(data.logoImage)
+        }
+      })
     } catch (error) {
       console.error('Failed to load site settings:', error)
     }
@@ -48,6 +54,7 @@ export default function SiteSettingsManager() {
   }
 
   const handleSave = async () => {
+    setSaving(true)
     try {
       await updateSiteSettings(settings)
       setIsSaved(true)
@@ -55,16 +62,20 @@ export default function SiteSettingsManager() {
     } catch (error) {
       console.error('Failed to save site settings:', error)
       alert('Failed to save settings')
+    } finally {
+      setSaving(false)
     }
   }
+
+  if (loading) return <AdminLoading label="Loading site settings..." />
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Site Settings</h2>
-        <Button onClick={handleSave} className="flex items-center justify-center gap-2 w-full sm:w-auto">
-          <Save size={20} />
-          {isSaved ? "Saved!" : "Save Changes"}
+        <Button onClick={handleSave} disabled={saving} className="flex items-center justify-center gap-2 w-full sm:w-auto">
+          {saving ? <Spinner className="size-5" /> : <Save size={20} />}
+          {saving ? "Saving..." : isSaved ? "Saved!" : "Save Changes"}
         </Button>
       </div>
 

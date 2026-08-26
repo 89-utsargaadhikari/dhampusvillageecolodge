@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AdminSearch, matchesSearch } from "@/components/admin-search"
+import { AdminLoading, useAdminLoader } from "@/components/admin-loading"
 import { 
   fetchPurchases, 
   fetchSales, 
@@ -74,6 +75,7 @@ export default function FinancialReports() {
   const [isSaleDialogOpen, setIsSaleDialogOpen] = useState(false)
   const [isVendorDialogOpen, setIsVendorDialogOpen] = useState(false)
   const [isStaffDialogOpen, setIsStaffDialogOpen] = useState(false)
+  const { loading, run } = useAdminLoader()
 
   useEffect(() => {
     loadData()
@@ -81,16 +83,18 @@ export default function FinancialReports() {
 
   const loadData = async () => {
     try {
-      const [purchasesData, salesData, vendorsData, staffData] = await Promise.all([
-        fetchPurchases(),
-        fetchSales(),
-        fetchVendors(),
-        fetchStaff()
-      ])
-      setPurchases(purchasesData)
-      setSales(salesData)
-      setVendors(vendorsData)
-      setStaff(staffData)
+      await run(async () => {
+        const [purchasesData, salesData, vendorsData, staffData] = await Promise.all([
+          fetchPurchases(),
+          fetchSales(),
+          fetchVendors(),
+          fetchStaff()
+        ])
+        setPurchases(purchasesData)
+        setSales(salesData)
+        setVendors(vendorsData)
+        setStaff(staffData)
+      })
     } catch (error) {
       console.error('Failed to load data:', error)
     }
@@ -215,6 +219,8 @@ export default function FinancialReports() {
     link.download = `${filename}.csv`
     link.click()
   }
+
+  if (loading) return <AdminLoading label="Loading financial reports..." />
 
   return (
     <div className="space-y-6">

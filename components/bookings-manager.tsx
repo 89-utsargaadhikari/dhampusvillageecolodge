@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, Fragment } from "react"
+import { useState, useEffect, useRef, Fragment } from "react"
 import { Trash2, Edit, Plus, X, ChevronDown } from "lucide-react"
 import { type Booking } from "@/lib/storage"
 import {
@@ -10,15 +10,32 @@ import {
   deleteBooking as deleteBookingAPI,
   fetchRooms,
   fetchRoomInventory,
-  fetchBusinesses
+  fetchBusinesses,
+  fetchBusinessRates
 } from "@/lib/api"
 import { BOOKING_SOURCES, BOOKING_STATUSES, CURRENCIES, MEAL_PLANS, OCCUPANCY_TYPES, currencySymbol, defaultOccupancyForRoomType, formatMoney, picklistRoomTypes, stayNightsAndDays } from "@/lib/hotel"
+import {
+  findRateCardByKey,
+  formatRateValue,
+  isPartnerBookingSource,
+  lookupPartnerRate,
+  matchingRateCardKey,
+  occupancyRate,
+  partnerCurrencies,
+  preferredPartnerCurrency,
+  rateCardKey,
+  rateCardRatesSummary,
+  rateCardSelectLabel,
+  type RateCardRow,
+} from "@/lib/rate-cards"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { AdminSearch, matchesSearch } from "@/components/admin-search"
+import { AdminLoading, useAdminLoader } from "@/components/admin-loading"
+import { Spinner } from "@/components/ui/spinner"
 
 type RoomLine = {
   id?: number
@@ -45,6 +62,17 @@ function emptyRoomLine(room = ""): RoomLine {
     extraBed: false,
     price: "",
   }
+}
+
+function applyRateToLine(line: RoomLine, cards: RateCardRow[], mealPlan: string, currency: string): RoomLine {
+  const rate = lookupPartnerRate(cards, {
+    roomType: line.room,
+    mealPlan,
+    currency,
+    occupancy: line.occupancy,
+  })
+  if (rate == null) return line
+  return { ...line, price: String(rate) }
 }
 
 function datesOverlap(checkin: Date, checkout: Date, bookingCheckin: string, bookingCheckout: string) {
@@ -158,6 +186,7 @@ export default function BookingsManager() {
     businessId: "",
     bookingType: "EP",
     currency: "NPR",
+    selectedRateCardKey: "",
     rooms: [emptyRoomLine()],
   }
   const [formData, setFormData] = useState(emptyForm)
@@ -166,6 +195,10 @@ export default function BookingsManager() {
   const [searchQuery, setSearchQuery] = useState("")
   const [partnerSearch, setPartnerSearch] = useState("")
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set())
+  const [partnerRates, setPartnerRates] = useState<RateCardRow[]>([])
+  const applyPartnerRatesRef = useRef(false)
+  const { loading, run } = useAdminLoader()
+  const [saving, setSaving] = useState(false)
 
   const bookingGroups = groupBookings(bookings)
   const visibleGroups = bookingGroups.filter((group) => {
@@ -194,35 +227,129 @@ export default function BookingsManager() {
 
   const loadData = async () => {
     try {
-      const [bookingsData, roomsData, businessesData, inventoryData] = await Promise.all([
-        fetchBookings(),
-        fetchRooms(),
-        fetchBusinesses().catch(() => []),
-        fetchRoomInventory().catch(() => []),
-      ])
-      setBookings(bookingsData)
-      setRooms(roomsData)
-      setInventory(inventoryData || [])
-      setBusinesses((businessesData || []).filter((b: any) => b.active !== false))
+      await run(async () => {
+        const [bookingsData, roomsData, businessesData, inventoryData] = await Promise.all([
+          fetchBookings(),
+          fetchRooms(),
+          fetchBusinesses().catch(() => []),
+          fetchRoomInventory().catch(() => []),
+        ])
+        setBookings(bookingsData)
+        setRooms(roomsData)
+        setInventory(inventoryData || [])
+        setBusinesses((businessesData || []).filter((b: any) => b.active !== false))
+      })
     } catch (error) {
       console.error('Failed to load bookings data:', error)
       alert('Failed to load bookings data')
     }
   }
 
+  useEffect(() => {
+    if (!formData.businessId) {
+      setPartnerRates([])
+      return
+    }
+    fetchBusinessRates(formData.businessId)
+      .then((cards) => setPartnerRates(cards))
+      .catch(() => setPartnerRates([]))
+  }, [formData.businessId])
+
+  const applyCardToRooms = (rooms: RoomLine[], card: RateCardRow | null) => {
+    if (!card) return rooms
+    return rooms.map((line) =>
+      applyRateToLine({ ...line, room: card.roomType || line.room }, [card], card.mealPlan, card.currency)
+    )
+  }
+
+  const applyRateCardSelection = (key: string, cards = partnerRates) => {
+    const card = findRateCardByKey(cards, key)
+    setFormData((prev) => {
+      if (!card) return { ...prev, selectedRateCardKey: key }
+      return {
+        ...prev,
+        selectedRateCardKey: key,
+        bookingType: card.mealPlan,
+        currency: card.currency,
+        rooms: applyCardToRooms(prev.rooms, card),
+      }
+    })
+  }
+
+  useEffect(() => {
+    if (!partnerRates.length) return
+    if (applyPartnerRatesRef.current) {
+      setFormData((prev) => {
+        const key =
+          prev.selectedRateCardKey ||
+          matchingRateCardKey(partnerRates, {
+            roomType: prev.rooms[0]?.room,
+            mealPlan: prev.bookingType,
+            currency: preferredPartnerCurrency(partnerRates, prev.currency),
+          }) ||
+          (partnerRates[0] ? rateCardKey(partnerRates[0]) : "")
+        const card = findRateCardByKey(partnerRates, key)
+        const currency = card?.currency || preferredPartnerCurrency(partnerRates, prev.currency)
+        const mealPlan = card?.mealPlan || prev.bookingType
+        return {
+          ...prev,
+          selectedRateCardKey: key,
+          currency,
+          bookingType: mealPlan,
+          rooms: card ? applyCardToRooms(prev.rooms, card) : prev.rooms.map((line) => applyRateToLine(line, partnerRates, mealPlan, currency)),
+        }
+      })
+      applyPartnerRatesRef.current = false
+      return
+    }
+    setFormData((prev) => {
+      const key = matchingRateCardKey(partnerRates, {
+        roomType: prev.rooms[0]?.room,
+        mealPlan: prev.bookingType,
+        currency: prev.currency,
+      })
+      if (!key || key === prev.selectedRateCardKey) return prev
+      return { ...prev, selectedRateCardKey: key }
+    })
+  }, [partnerRates])
+
+  const applyRatesToRooms = (rooms: RoomLine[], mealPlan: string, currency: string, cards = partnerRates) => {
+    if (!cards.length) return rooms
+    return rooms.map((line) => applyRateToLine(line, cards, mealPlan, currency))
+  }
+
+  const selectedRateCard = findRateCardByKey(partnerRates, formData.selectedRateCardKey)
+  const partnerBooking = isPartnerBookingSource(formData.bookingSource)
+
   const updateRoomLine = (index: number, patch: Partial<RoomLine>) => {
     setFormData((prev) => {
       const nextRooms = [...prev.rooms]
-      nextRooms[index] = { ...nextRooms[index], ...patch }
-      return { ...prev, rooms: nextRooms }
+      const merged = { ...nextRooms[index], ...patch }
+      const card = findRateCardByKey(partnerRates, prev.selectedRateCardKey)
+      const shouldApply = Boolean(patch.room || patch.occupancy)
+      nextRooms[index] = shouldApply
+        ? applyRateToLine(merged, card ? [card] : partnerRates, card?.mealPlan || prev.bookingType, card?.currency || prev.currency)
+        : merged
+      const nextKey = patch.room
+        ? matchingRateCardKey(partnerRates, {
+            roomType: patch.room,
+            mealPlan: prev.bookingType,
+            currency: prev.currency,
+          }) || prev.selectedRateCardKey
+        : prev.selectedRateCardKey
+      return { ...prev, rooms: nextRooms, selectedRateCardKey: nextKey }
     })
   }
 
   const addRoomLine = () => {
-    setFormData((prev) => ({
-      ...prev,
-      rooms: [...prev.rooms, emptyRoomLine(prev.rooms[0]?.room || rooms[0]?.name || "")],
-    }))
+    setFormData((prev) => {
+      const next = emptyRoomLine(prev.rooms[0]?.room || rooms[0]?.name || "")
+      const card = findRateCardByKey(partnerRates, prev.selectedRateCardKey)
+      return {
+        ...prev,
+        rooms: [...prev.rooms, card ? applyRateToLine({ ...next, room: card.roomType }, [card], card.mealPlan, card.currency) : applyRateToLine(next, partnerRates, prev.bookingType, prev.currency)],
+      }
+    })
   }
 
   const setRoomCount = (value: string) => {
@@ -251,6 +378,7 @@ export default function BookingsManager() {
         : [booking]
       const primary = members[0]
       setEditingMembers(members)
+      applyPartnerRatesRef.current = false
       setFormData({
         guest: primary.guest,
         email: primary.email || "",
@@ -262,6 +390,7 @@ export default function BookingsManager() {
         businessId: primary.businessId ? String(primary.businessId) : "",
         bookingType: primary.bookingType === "bed_only" ? "EP" : primary.bookingType === "bed_breakfast" ? "BB" : (primary.bookingType || "EP"),
         currency: primary.currency || "NPR",
+        selectedRateCardKey: "",
         rooms: members.map((member) => ({
           id: member.id,
           room: member.room,
@@ -274,6 +403,7 @@ export default function BookingsManager() {
       })
     } else {
       setEditingMembers([])
+      applyPartnerRatesRef.current = false
       setFormData({
         ...emptyForm,
         rooms: [emptyRoomLine(rooms[0]?.name || "")],
@@ -344,6 +474,7 @@ export default function BookingsManager() {
     }))
 
     try {
+      setSaving(true)
       if (editingMembers.length > 0) {
         const remainingIds = new Set(roomPayloads.map((line) => line.id).filter(Boolean) as number[])
         const removedIds = editingMembers.map((member) => member.id).filter((id) => !remainingIds.has(id))
@@ -383,6 +514,8 @@ export default function BookingsManager() {
     } catch (error) {
       console.error('Failed to save booking:', error)
       alert(error instanceof Error ? error.message : 'Failed to save booking')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -528,6 +661,8 @@ export default function BookingsManager() {
 
   const totalRate = (members: Booking[]) =>
     members.reduce((sum, member) => sum + parseFloat(member.price || "0"), 0)
+
+  if (loading) return <AdminLoading label="Loading bookings..." />
 
   return (
     <div className="space-y-5">
@@ -764,7 +899,7 @@ export default function BookingsManager() {
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingMembers.length > 0 ? "Edit Booking" : "Add New Booking"}</DialogTitle>
           </DialogHeader>
@@ -819,6 +954,117 @@ export default function BookingsManager() {
             <p className="text-sm text-gray-600 -mt-2">
               Stay: <span className="font-semibold">{stayNightsAndDays(formData.checkin, formData.checkout).label}</span>
             </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="bookingSource">Booking Source</Label>
+                <Select
+                  value={formData.bookingSource}
+                  onValueChange={(value) =>
+                    setFormData({
+                      ...formData,
+                      bookingSource: value,
+                      businessId: isPartnerBookingSource(value) ? formData.businessId : "",
+                      selectedRateCardKey: isPartnerBookingSource(value) ? formData.selectedRateCardKey : "",
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {BOOKING_SOURCES.map((source) => (
+                      <SelectItem key={source.value} value={source.value}>{source.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {partnerBooking && (
+                <div className="space-y-2">
+                  <Label>Company / Agent</Label>
+                  <AdminSearch
+                    value={partnerSearch}
+                    onChange={setPartnerSearch}
+                    placeholder="Search partners..."
+                    className="mb-2"
+                  />
+                  <Select
+                    value={formData.businessId}
+                    onValueChange={(value) => {
+                      applyPartnerRatesRef.current = true
+                      setFormData((prev) => ({ ...prev, businessId: value, selectedRateCardKey: "" }))
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select from business partners" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {businesses.filter((business: any) => matchesSearch(partnerSearch, business.name, business.phone, business.contactPerson)).map((business) => (
+                        <SelectItem key={business.id} value={String(business.id)}>{business.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+
+            {partnerBooking && formData.businessId && (
+              <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-3 sm:p-4 space-y-3">
+                <div className="space-y-2">
+                  <Label>Rate card</Label>
+                  <Select
+                    value={formData.selectedRateCardKey || undefined}
+                    onValueChange={applyRateCardSelection}
+                    disabled={partnerRates.length === 0}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={partnerRates.length ? "Select a partner rate card" : "No rate cards for this partner"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {partnerRates.map((card) => (
+                        <SelectItem key={rateCardKey(card)} value={rateCardKey(card)}>
+                          {rateCardSelectLabel(card)} — {rateCardRatesSummary(card)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {selectedRateCard ? (
+                  <div className="grid grid-cols-3 gap-2 text-sm">
+                    {OCCUPANCY_TYPES.map((item) => {
+                      const rate = occupancyRate(selectedRateCard, item.value)
+                      const active = formData.rooms[0]?.occupancy === item.value
+                      return (
+                        <button
+                          key={item.value}
+                          type="button"
+                          className={`rounded-md border px-2 py-2 text-left ${active ? "border-blue-500 bg-white ring-1 ring-blue-200" : "border-blue-100 bg-white/70"}`}
+                          onClick={() => {
+                            setFormData((prev) => {
+                              const card = findRateCardByKey(partnerRates, prev.selectedRateCardKey)
+                              if (!card) return prev
+                              return {
+                                ...prev,
+                                rooms: prev.rooms.map((line) =>
+                                  applyRateToLine({ ...line, occupancy: item.value }, [card], card.mealPlan, card.currency)
+                                ),
+                              }
+                            })
+                          }}
+                        >
+                          <div className="text-xs text-gray-500">{item.label}</div>
+                          <div className="font-semibold">{formatRateValue(rate, selectedRateCard.currency)}</div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : partnerRates.length === 0 ? (
+                  <p className="text-xs text-amber-700">This partner has no rate cards yet. Add them under Business Partners, or enter a custom rate.</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Select a rate card to see single, double, and triple prices.</p>
+                )}
+              </div>
+            )}
 
             <div className="space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
@@ -876,14 +1122,27 @@ export default function BookingsManager() {
                     </div>
                     <div className="min-w-0 space-y-2">
                       <Label>Occupancy</Label>
-                      <Select value={line.occupancy || undefined} onValueChange={(value) => updateRoomLine(index, { occupancy: value })}>
+                      <Select
+                        value={line.occupancy || undefined}
+                        onValueChange={(value) => updateRoomLine(index, { occupancy: value })}
+                      >
                         <SelectTrigger>
                           <SelectValue placeholder="Occupancy" />
                         </SelectTrigger>
                         <SelectContent>
-                          {OCCUPANCY_TYPES.map((item) => (
-                            <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
-                          ))}
+                          {OCCUPANCY_TYPES.map((item) => {
+                            const card = selectedRateCard || findRateCardByKey(partnerRates, matchingRateCardKey(partnerRates, {
+                              roomType: line.room,
+                              mealPlan: formData.bookingType,
+                              currency: formData.currency,
+                            }))
+                            const rate = occupancyRate(card, item.value)
+                            return (
+                              <SelectItem key={item.value} value={item.value}>
+                                {item.label}{rate != null ? ` · ${formatRateValue(rate, card?.currency || formData.currency)}` : ""}
+                              </SelectItem>
+                            )
+                          })}
                         </SelectContent>
                       </Select>
                     </div>
@@ -923,6 +1182,14 @@ export default function BookingsManager() {
                           placeholder="Custom / partner rate"
                         />
                       </div>
+                      {selectedRateCard && (
+                        <p className="text-xs text-muted-foreground">
+                          {formatRateValue(occupancyRate(selectedRateCard, line.occupancy), selectedRateCard.currency)} from {rateCardSelectLabel(selectedRateCard)}
+                        </p>
+                      )}
+                      {partnerBooking && formData.businessId && !selectedRateCard && (
+                        <p className="text-xs text-muted-foreground">Select a rate card above, or enter a custom amount</p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -932,7 +1199,26 @@ export default function BookingsManager() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="min-w-0 space-y-2">
                 <Label>Meal Plan</Label>
-                <Select value={formData.bookingType} onValueChange={(value) => setFormData({ ...formData, bookingType: value })}>
+                <Select
+                  value={formData.bookingType}
+                  onValueChange={(value) => {
+                    const key = matchingRateCardKey(partnerRates, {
+                      roomType: formData.rooms[0]?.room,
+                      mealPlan: value,
+                      currency: formData.currency,
+                    })
+                    if (key) {
+                      applyRateCardSelection(key)
+                      return
+                    }
+                    setFormData((prev) => ({
+                      ...prev,
+                      bookingType: value,
+                      selectedRateCardKey: "",
+                      rooms: applyRatesToRooms(prev.rooms, value, prev.currency),
+                    }))
+                  }}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -945,16 +1231,48 @@ export default function BookingsManager() {
               </div>
               <div className="space-y-2">
                 <Label>Currency</Label>
-                <Select value={formData.currency} onValueChange={(value) => setFormData({ ...formData, currency: value })}>
+                <Select
+                  value={formData.currency}
+                  onValueChange={(value) => {
+                    const key = matchingRateCardKey(partnerRates, {
+                      roomType: formData.rooms[0]?.room,
+                      mealPlan: formData.bookingType,
+                      currency: value,
+                    })
+                    if (key) {
+                      applyRateCardSelection(key)
+                      return
+                    }
+                    setFormData((prev) => ({
+                      ...prev,
+                      currency: value,
+                      selectedRateCardKey: "",
+                      rooms: applyRatesToRooms(prev.rooms, prev.bookingType, value),
+                    }))
+                  }}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {CURRENCIES.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
-                    ))}
+                    {(partnerCurrencies(partnerRates).length ? partnerCurrencies(partnerRates) : CURRENCIES.map((item) => item.value)).map((value) => {
+                      const item = CURRENCIES.find((currency) => currency.value === value) || { value, label: value }
+                      return <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                    })}
+                    {partnerCurrencies(partnerRates).length > 0 &&
+                      CURRENCIES.filter((item) => !partnerCurrencies(partnerRates).includes(item.value)).map((item) => (
+                        <SelectItem key={item.value} value={item.value}>{item.label} (no partner card)</SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
+                {formData.businessId && partnerRates.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Partner has {partnerCurrencies(partnerRates).join(", ")} rate cards. Pick USD for US guests, NPR for Nepal.
+                  </p>
+                )}
+                {formData.businessId && partnerRates.length === 0 && (
+                  <p className="text-xs text-amber-700">This partner has no rate cards yet. Enter a custom rate or add cards first.</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="status">Status</Label>
@@ -976,58 +1294,19 @@ export default function BookingsManager() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="bookingSource">Booking Source</Label>
-                <Select
-                  value={formData.bookingSource}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, bookingSource: value, businessId: value === "phone" || value === "website" || value === "walkin" ? "" : formData.businessId })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {BOOKING_SOURCES.map((source) => (
-                      <SelectItem key={source.value} value={source.value}>{source.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              {(formData.bookingSource === "travel_agent" || formData.bookingSource === "company" || formData.bookingSource === "business") && (
-                <div className="space-y-2">
-                  <Label>Company / Agent</Label>
-                  <AdminSearch
-                    value={partnerSearch}
-                    onChange={setPartnerSearch}
-                    placeholder="Search partners..."
-                    className="mb-2"
-                  />
-                  <Select value={formData.businessId} onValueChange={(value) => setFormData({ ...formData, businessId: value })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select from business partners" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {businesses.filter((business: any) => matchesSearch(partnerSearch, business.name, business.phone, business.contactPerson)).map((business) => (
-                        <SelectItem key={business.id} value={String(business.id)}>{business.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-            </div>
-
             <div className="flex justify-end gap-2 pt-4">
               <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit">
-                {editingMembers.length > 0
-                  ? "Update Booking"
-                  : formData.rooms.length > 1
-                    ? `Add Booking (${formData.rooms.length} rooms)`
-                    : "Add Booking"}
+              <Button type="submit" disabled={saving}>
+                {saving && <Spinner className="size-4" />}
+                {saving
+                  ? "Saving..."
+                  : editingMembers.length > 0
+                    ? "Update Booking"
+                    : formData.rooms.length > 1
+                      ? `Add Booking (${formData.rooms.length} rooms)`
+                      : "Add Booking"}
               </Button>
             </div>
           </form>

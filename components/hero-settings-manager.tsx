@@ -10,6 +10,8 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { AdminSearch, matchesSearch } from "@/components/admin-search"
+import { AdminLoading, useAdminLoader } from "@/components/admin-loading"
+import { Spinner } from "@/components/ui/spinner"
 
 interface HeroMedia {
   id: number
@@ -35,12 +37,23 @@ export default function HeroSettingsManager() {
     url: "",
   })
   const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
+  const { loading: pageLoading, run } = useAdminLoader()
 
   useEffect(() => {
-    loadSettings()
-    fetchHeroMedia()
+    loadPage()
   }, [])
+
+  const loadPage = async () => {
+    try {
+      await run(async () => {
+        await Promise.all([loadSettings(), fetchHeroMedia()])
+      })
+    } catch (error) {
+      console.error('Failed to load hero settings:', error)
+    }
+  }
   
   const loadSettings = async () => {
     try {
@@ -96,6 +109,7 @@ export default function HeroSettingsManager() {
   }
 
   const handleSave = async () => {
+    setSaving(true)
     try {
       await updateHeroSettings(settings)
       setIsSaved(true)
@@ -103,6 +117,8 @@ export default function HeroSettingsManager() {
     } catch (error) {
       console.error('Failed to save hero settings:', error)
       alert('Failed to save settings')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -177,6 +193,8 @@ export default function HeroSettingsManager() {
     }
   }
 
+  if (pageLoading) return <AdminLoading label="Loading hero settings..." />
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
@@ -184,9 +202,9 @@ export default function HeroSettingsManager() {
           <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Hero Section Settings</h2>
           <p className="text-sm text-gray-600">Manage images, videos, and text for the hero section</p>
         </div>
-        <Button onClick={handleSave} className="flex items-center justify-center gap-2 bg-green-600 w-full sm:w-auto">
-          <Save size={20} />
-          {isSaved ? "Saved!" : "Save Changes"}
+        <Button onClick={handleSave} disabled={saving} className="flex items-center justify-center gap-2 bg-green-600 w-full sm:w-auto">
+          {saving ? <Spinner className="size-5" /> : <Save size={20} />}
+          {saving ? "Saving..." : isSaved ? "Saved!" : "Save Changes"}
         </Button>
       </div>
 

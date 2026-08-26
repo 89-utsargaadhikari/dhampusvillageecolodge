@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import InventoryItemForm from "./inventory-item-form"
 import InventoryUpdateModal from "./inventory-update-modal"
+import { AdminLoading, useAdminLoader } from "@/components/admin-loading"
 
 interface InventoryItem {
   id: number
@@ -52,8 +53,8 @@ export default function InventoryManager() {
   const [showForm, setShowForm] = useState(false)
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null)
   const [updatingItem, setUpdatingItem] = useState<InventoryItem | null>(null)
-  const [loading, setLoading] = useState(true)
   const [transferQty, setTransferQty] = useState<Record<number, string>>({})
+  const { loading, run } = useAdminLoader()
 
   useEffect(() => {
     fetchItems()
@@ -75,17 +76,17 @@ export default function InventoryManager() {
 
   const fetchItems = async () => {
     try {
-      const response = await fetch("/api/inventory")
-      const data = await response.json()
-      const itemsArray = Array.isArray(data) ? data : []
-      setItems(itemsArray)
-      setFilteredItems(itemsArray)
+      await run(async () => {
+        const response = await fetch("/api/inventory")
+        const data = await response.json()
+        const itemsArray = Array.isArray(data) ? data : []
+        setItems(itemsArray)
+        setFilteredItems(itemsArray)
+      })
     } catch (error) {
       console.error("Failed to fetch inventory items:", error)
       setItems([])
       setFilteredItems([])
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -185,16 +186,7 @@ export default function InventoryManager() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <Package className="w-12 h-12 mx-auto mb-4 animate-pulse text-green-600" />
-          <p className="text-gray-600">Loading inventory...</p>
-        </div>
-      </div>
-    )
-  }
+  if (loading) return <AdminLoading label="Loading inventory..." />
 
   return (
     <div className="space-y-6">
