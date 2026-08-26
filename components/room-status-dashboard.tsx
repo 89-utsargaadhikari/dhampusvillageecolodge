@@ -42,9 +42,9 @@ export default function RoomStatusDashboard() {
     try {
       console.log('🔄 Room Status: Loading data from database...')
       const [allRooms, allBookings, inventory] = await Promise.all([
-        fetchRooms(),
+        fetchRooms().catch(() => []),
         fetchBookings(),
-        fetchRoomInventory()
+        fetchRoomInventory().catch(() => [])
       ])
       console.log('✅ Loaded:', allRooms.length, 'room types,', allBookings.length, 'bookings,', inventory.length, 'room numbers')
       console.log('📋 Bookings:', allBookings)

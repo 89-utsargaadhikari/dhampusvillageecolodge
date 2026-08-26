@@ -8,12 +8,27 @@ export const MEAL_PLANS = [
 ] as const
 
 export const OCCUPANCY_TYPES = [
-  { value: "SGL", label: "SGL — Single" },
-  { value: "DBL", label: "DBL — Double" },
-  { value: "TRPL", label: "TRPL — Triple" },
+  { value: "SGL", label: "SGL — Single", pax: 1 },
+  { value: "TWIN", label: "TWIN — Twin", pax: 2 },
+  { value: "DBL", label: "DBL — Double", pax: 2 },
+  { value: "TRPL", label: "TRPL — Triple", pax: 3 },
 ] as const
 
-/** Lodge room categories used on every room-type picklist. Occupancy is SGL/DBL/TRPL on the booking. */
+export function paxForOccupancy(occupancy?: string | null) {
+  if (occupancy === "SGL") return 1
+  if (occupancy === "TRPL") return 3
+  if (occupancy === "TWIN" || occupancy === "DBL") return 2
+  return 1
+}
+
+export function occupancyForPax(pax: number, currentOccupancy?: string | null) {
+  const count = Number.isFinite(pax) && pax > 0 ? Math.floor(pax) : 1
+  if (count <= 1) return "SGL"
+  if (count === 2) return currentOccupancy === "TWIN" ? "TWIN" : "DBL"
+  return "TRPL"
+}
+
+/** Lodge room categories used on every room-type picklist. Occupancy is SGL/TWIN/DBL/TRPL on the booking. */
 export const STANDARD_ROOM_TYPES = [
   {
     name: "Standard Room",
@@ -147,20 +162,57 @@ export function parseOptionalNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+export function parseStayDate(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim())
+  if (match) {
+    return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  date.setHours(0, 0, 0, 0)
+  return date
+}
+
 export function stayNightsAndDays(checkin?: string | null, checkout?: string | null) {
   if (!checkin || !checkout) return { nights: null as number | null, days: null as number | null, label: "—" }
-  const start = new Date(checkin)
-  const end = new Date(checkout)
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+  const start = parseStayDate(checkin)
+  const end = parseStayDate(checkout)
+  if (!start || !end) {
     return { nights: null as number | null, days: null as number | null, label: "—" }
   }
-  start.setHours(0, 0, 0, 0)
-  end.setHours(0, 0, 0, 0)
   const nights = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
   const days = nights >= 0 ? nights + 1 : nights - 1
   const nightWord = Math.abs(nights) === 1 ? "night" : "nights"
   const dayWord = Math.abs(days) === 1 ? "day" : "days"
   return { nights, days, label: `${nights} ${nightWord} · ${days} ${dayWord}` }
+}
+
+/** Count of billable nights. Same-day / missing dates count as 1 night. */
+export function stayNightsCount(checkin?: string | null, checkout?: string | null) {
+  const { nights } = stayNightsAndDays(checkin, checkout)
+  if (nights == null || !Number.isFinite(nights) || nights < 1) return 1
+  return nights
+}
+
+export function stayTotalFromNightlyRate(
+  nightlyRate: number | string | null | undefined,
+  checkin?: string | null,
+  checkout?: string | null
+) {
+  const rate = typeof nightlyRate === "number" ? nightlyRate : parseFloat(String(nightlyRate || "0"))
+  const safeRate = Number.isFinite(rate) ? Math.max(0, rate) : 0
+  return Math.round((safeRate * stayNightsCount(checkin, checkout) + Number.EPSILON) * 100) / 100
+}
+
+export function nightlyRateFromStayTotal(
+  total: number | string | null | undefined,
+  checkin?: string | null,
+  checkout?: string | null
+) {
+  const amount = typeof total === "number" ? total : parseFloat(String(total || "0"))
+  const safeTotal = Number.isFinite(amount) ? amount : 0
+  const nights = stayNightsCount(checkin, checkout)
+  return Math.round((safeTotal / nights + Number.EPSILON) * 100) / 100
 }
 
 export const BOOKING_STATUSES = [

@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { CURRENCIES, MEAL_PLANS, OCCUPANCY_TYPES, mealPlanLabel, picklistRoomTypes } from "@/lib/hotel"
+import { CURRENCIES, MEAL_PLANS, OCCUPANCY_TYPES, formatMoney, mealPlanLabel, occupancyForPax, paxForOccupancy, picklistRoomTypes, stayNightsAndDays, stayNightsCount, stayTotalFromNightlyRate } from "@/lib/hotel"
 
 interface Business {
   id: number
@@ -43,7 +43,7 @@ export default function BusinessBookings() {
     email: "",
     numberOfGuests: "1",
     bookingType: "EP",
-    occupancy: "DBL",
+    occupancy: "SGL",
     currency: "NPR",
     extraBed: false,
     rooms: [{ room: "", roomNumber: "", price: "" }] as RoomBooking[],
@@ -61,7 +61,7 @@ export default function BusinessBookings() {
       const [businessesData, bookingsData, roomsData] = await Promise.all([
         fetchBusinesses(),
         fetchBookings(),
-        fetchRooms()
+        fetchRooms().catch(() => [])
       ])
       setBusinesses(businessesData.filter((b: any) => b.active))
       setBookings(bookingsData.filter((b: any) => b.bookingSource === "business"))
@@ -119,7 +119,7 @@ export default function BusinessBookings() {
       email: "",
       numberOfGuests: "1",
       bookingType: "EP",
-      occupancy: "DBL",
+      occupancy: "SGL",
       currency: "NPR",
       extraBed: false,
       rooms: [{ room: "", roomNumber: "", price: "" }],
@@ -174,6 +174,20 @@ export default function BusinessBookings() {
       return
     }
 
+    if (!formData.checkin || !formData.checkout) {
+      alert("Please select check-in and check-out dates")
+      return
+    }
+
+    const checkinDate = new Date(formData.checkin)
+    const checkoutDate = new Date(formData.checkout)
+    checkinDate.setHours(0, 0, 0, 0)
+    checkoutDate.setHours(0, 0, 0, 0)
+    if (checkoutDate <= checkinDate) {
+      alert("Check-out date must be after check-in date.")
+      return
+    }
+
     try {
       const groupId = formData.rooms.length > 1 ? `GRP-${Date.now()}` : null
       const bookingPromises = formData.rooms.map(roomBooking => 
@@ -186,7 +200,7 @@ export default function BusinessBookings() {
           roomNumber: roomBooking.roomNumber || null,
           checkin: formData.checkin,
           checkout: formData.checkout,
-          price: roomBooking.price || "0",
+          price: String(stayTotalFromNightlyRate(roomBooking.price, formData.checkin, formData.checkout)),
           numberOfGuests: parseInt(formData.numberOfGuests),
           bookingType: formData.bookingType,
           occupancy: formData.occupancy,
@@ -416,7 +430,14 @@ export default function BusinessBookings() {
                   type="number"
                   min="1"
                   value={formData.numberOfGuests}
-                  onChange={(e) => setFormData({ ...formData, numberOfGuests: e.target.value })}
+                  onChange={(e) => {
+                    const pax = Math.max(1, parseInt(e.target.value) || 1)
+                    setFormData({
+                      ...formData,
+                      numberOfGuests: String(pax),
+                      occupancy: occupancyForPax(pax, formData.occupancy),
+                    })
+                  }}
                   required
                 />
               </div>
@@ -440,7 +461,11 @@ export default function BusinessBookings() {
                 <Label>Occupancy</Label>
                 <Select
                   value={formData.occupancy}
-                  onValueChange={(value) => setFormData({ ...formData, occupancy: value })}
+                  onValueChange={(value) => setFormData({
+                    ...formData,
+                    occupancy: value,
+                    numberOfGuests: String(paxForOccupancy(value)),
+                  })}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -493,6 +518,9 @@ export default function BusinessBookings() {
                 />
               </div>
             </div>
+            <p className="text-sm text-gray-600">
+              Stay: <span className="font-semibold">{stayNightsAndDays(formData.checkin, formData.checkout).label}</span>
+            </p>
 
             {/* Multiple Rooms */}
             <div className="space-y-4">
@@ -568,9 +596,11 @@ export default function BusinessBookings() {
                         </Select>
                       </div>
                       <div>
-                        <Label>Price (NPR) *</Label>
+                        <Label>Rate / night *</Label>
                         <Input
                           type="number"
+                          min="0"
+                          step="0.01"
                           value={roomBooking.price}
                           onChange={(e) => {
                             const newRooms = [...formData.rooms]
@@ -579,11 +609,29 @@ export default function BusinessBookings() {
                           }}
                           required
                         />
+                        {formData.checkin && formData.checkout ? (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {stayNightsCount(formData.checkin, formData.checkout)} night{stayNightsCount(formData.checkin, formData.checkout) === 1 ? "" : "s"} × {formatMoney(roomBooking.price || 0, formData.currency)} = {formatMoney(stayTotalFromNightlyRate(roomBooking.price, formData.checkin, formData.checkout), formData.currency)}
+                          </p>
+                        ) : null}
                       </div>
                     </div>
                   </CardContent>
                 </Card>
               ))}
+              {formData.checkin && formData.checkout ? (
+                <div className="flex items-center justify-between rounded-lg border px-4 py-3 text-sm">
+                  <span className="text-muted-foreground">
+                    Stay total ({stayNightsCount(formData.checkin, formData.checkout)} night{stayNightsCount(formData.checkin, formData.checkout) === 1 ? "" : "s"})
+                  </span>
+                  <span className="font-semibold">
+                    {formatMoney(
+                      formData.rooms.reduce((sum, roomBooking) => sum + stayTotalFromNightlyRate(roomBooking.price, formData.checkin, formData.checkout), 0),
+                      formData.currency
+                    )}
+                  </span>
+                </div>
+              ) : null}
             </div>
 
             <div>
