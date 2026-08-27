@@ -13,7 +13,7 @@ import {
   fetchBusinesses,
   fetchBusinessRates
 } from "@/lib/api"
-import { BOOKING_SOURCES, BOOKING_STATUSES, CURRENCIES, MEAL_PLANS, OCCUPANCY_TYPES, currencySymbol, defaultOccupancyForRoomType, formatMoney, picklistRoomTypes, stayNightsAndDays } from "@/lib/hotel"
+import { BOOKING_SOURCES, BOOKING_STATUSES, CURRENCIES, MEAL_PLANS, OCCUPANCY_TYPES, currencySymbol, defaultOccupancyForRoomType, formatMoney, nightlyRateFromStayTotal, occupancyForPax, parseStayDate, paxForOccupancy, picklistRoomTypes, stayNightsAndDays, stayTotalFromNightlyRate } from "@/lib/hotel"
 import {
   findRateCardByKey,
   formatRateValue,
@@ -320,6 +320,11 @@ export default function BookingsManager() {
 
   const selectedRateCard = findRateCardByKey(partnerRates, formData.selectedRateCardKey)
   const partnerBooking = isPartnerBookingSource(formData.bookingSource)
+  const formNights = stayNightsAndDays(formData.checkin, formData.checkout).nights
+  const formStayTotal = formData.rooms.reduce(
+    (sum, line) => sum + stayTotalFromNightlyRate(line.price, formData.checkin, formData.checkout),
+    0
+  )
 
   const updateRoomLine = (index: number, patch: Partial<RoomLine>) => {
     setFormData((prev) => {
