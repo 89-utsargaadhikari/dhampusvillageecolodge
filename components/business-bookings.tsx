@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { CURRENCIES, MEAL_PLANS, OCCUPANCY_TYPES, currencySymbol, formatMoney, mealPlanLabel, picklistRoomTypes } from "@/lib/hotel"
+import { CURRENCIES, MEAL_PLANS, OCCUPANCY_TYPES, currencySymbol, formatMoney, mealPlanLabel, occupancyForPax, picklistRoomTypes, stayNightsAndDays, stayNightsCount, stayTotalFromNightlyRate } from "@/lib/hotel"
 import { lookupPartnerRate, partnerCurrencies, preferredPartnerCurrency, type RateCardRow } from "@/lib/rate-cards"
 import { AdminLoading, useAdminLoader } from "@/components/admin-loading"
 
