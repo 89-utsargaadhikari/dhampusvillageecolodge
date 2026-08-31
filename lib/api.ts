@@ -283,6 +283,16 @@ export const createAccountTransaction = async (transactionData: any) => {
   return res.json()
 }
 
+export const updateAccountTransaction = async (id: number, transactionData: any) => {
+  const res = await fetch(`/api/accounts/transactions/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(transactionData)
+  })
+  if (!res.ok) throw new Error('Failed to update transaction')
+  return res.json()
+}
+
 export const deleteAccountTransaction = async (id: number) => {
   const res = await fetch(`/api/accounts/transactions/${id}`, {
     method: 'DELETE'

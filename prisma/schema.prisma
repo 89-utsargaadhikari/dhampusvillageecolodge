@@ -289,6 +289,8 @@ model AccountTransaction {
   exchangeRate    Float?    @default(1)
   amountNPR       Float?    @default(0) // Converted to NPR
   paymentMethod   String?   // "cash" | "card" | "bank_transfer" | "credit"
+  partyName       String?   // Vendor/customer/party the transaction was with
+  invoiceNo       String?   // Invoice/bill number
   referenceType   String?   // "booking" | "order" | "manual"
   referenceId     Int?
   taxAmount       Float?    @default(0)

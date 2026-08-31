@@ -41,6 +41,10 @@ export async function PUT(
     const id = parseInt(paramId)
     const body = await request.json()
 
+    if (body.items !== undefined && (!Array.isArray(body.items) || body.items.length === 0)) {
+      return NextResponse.json({ error: 'Order must have at least one item' }, { status: 400 })
+    }
+
     const existing = await prisma.restaurantOrder.findUnique({
       where: { id },
       include: { items: true }

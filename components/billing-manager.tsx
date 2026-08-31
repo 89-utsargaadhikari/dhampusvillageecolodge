@@ -19,7 +19,7 @@ import {
   referencedVatPercent,
   roundMoney,
 } from "@/lib/vat"
-import { formatMoney, mealPlanLabel } from "@/lib/hotel"
+import { formatMoney, mealPlanLabel, stayNightsCount } from "@/lib/hotel"
 import { normalizeCurrency } from "@/lib/rate-cards"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"

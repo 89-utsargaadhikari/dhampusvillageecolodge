@@ -30,7 +30,7 @@ export async function PUT(request: NextRequest) {
     // Build update data with only valid fields
     const updateData: any = {}
     if (body.siteName) updateData.siteName = body.siteName
-    if (body.logo !== undefined) updateData.logo = body.logo || null
+    if (body.logoImage !== undefined) updateData.logoImage = body.logoImage || null
     
     console.log('Update data:', updateData)
     
@@ -46,7 +46,7 @@ export async function PUT(request: NextRequest) {
       settings = await prisma.siteSettings.create({
         data: {
           siteName: updateData.siteName || 'Dhampus Eco Lodge',
-          logo: updateData.logo || null
+          logoImage: updateData.logoImage || null
         }
       })
     }
