@@ -4,11 +4,12 @@ import prisma from '@/lib/prisma'
 // PUT /api/sales/[id] - Update sale
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const body = await request.json()
-    const id = parseInt(params.id)
+    const { id: paramId } = await context.params
+    const id = parseInt(paramId)
     
     const sale = await prisma.sale.update({
       where: { id },
@@ -41,10 +42,11 @@ export async function PUT(
 // DELETE /api/sales/[id] - Delete sale
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const id = parseInt(params.id)
+    const { id: paramId } = await context.params
+    const id = parseInt(paramId)
     await prisma.sale.delete({
       where: { id }
     })

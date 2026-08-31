@@ -171,19 +171,24 @@ export default function RoomStatusDashboard() {
         checkinDate.setHours(0, 0, 0, 0)
         checkoutDate.setHours(0, 0, 0, 0)
 
+        // Check if checking in on selected date (checkin date is the selected date and not yet checked in).
+        // This must run before the "occupied" check below - a same-day arrival also satisfies
+        // checkinDate <= viewDate, so it would otherwise always be reported as plain "occupied"
+        // and this status would never be reached.
+        if (checkinDate.getTime() === viewDate.getTime() && booking.status === "Confirmed") {
+          return { status: "checkin-today", booking }
+        }
+
         // Check if occupied on selected date (date is between checkin and checkout)
         if (checkinDate <= viewDate && checkoutDate > viewDate) {
           return { status: "occupied", booking }
         }
 
-        // Check if checking out on selected date (checkout date is the selected date)
-        if (checkoutDate.getTime() === viewDate.getTime() && booking.status === "Confirmed") {
+        // Check if checking out on selected date (checkout date is the selected date). A guest who
+        // already checked in still physically occupies the room on their departure day, so treat
+        // "Checked In" the same as "Confirmed" here instead of falling through to "available".
+        if (checkoutDate.getTime() === viewDate.getTime() && (booking.status === "Confirmed" || booking.status === "Checked In")) {
           return { status: "checkout-today", booking }
-        }
-
-        // Check if checking in on selected date (checkin date is the selected date and not yet occupied)
-        if (checkinDate.getTime() === viewDate.getTime() && booking.status === "Confirmed") {
-          return { status: "checkin-today", booking }
         }
       }
 

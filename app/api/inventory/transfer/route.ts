@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
+import { locationStocks } from "@/lib/inventory-units"
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,25 +19,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Item not found" }, { status: 404 })
     }
 
-    const storeStock = item.storeStock || 0
-    if (storeStock < amount) {
+    const stocks = locationStocks(item)
+    if (stocks.storeStock < amount) {
       return NextResponse.json({ error: "Not enough store stock to transfer" }, { status: 400 })
     }
+
+    const nextStore = stocks.storeStock - amount
+    const nextBar = stocks.barStock + amount
 
     const updated = await prisma.$transaction(async (tx) => {
       const next = await tx.inventoryItem.update({
         where: { id: item.id },
         data: {
-          storeStock: storeStock - amount,
-          barStock: (item.barStock || 0) + amount,
-          currentStock: (item.currentStock || storeStock + (item.barStock || 0))
-        }
-      })
-
-      await tx.inventoryItem.update({
-        where: { id: item.id },
-        data: {
-          currentStock: (next.storeStock || 0) + (next.barStock || 0)
+          storeStock: nextStore,
+          barStock: nextBar,
+          currentStock: nextStore + nextBar
         }
       })
 
@@ -52,7 +49,7 @@ export async function POST(request: NextRequest) {
         }
       })
 
-      return tx.inventoryItem.findUnique({ where: { id: item.id } })
+      return next
     })
 
     return NextResponse.json(updated)

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
-import { isCountableUnit } from '@/lib/inventory-units'
+import { isCountableUnit, locationStocks } from '@/lib/inventory-units'
 
 export async function GET() {
   try {
@@ -12,7 +12,13 @@ export async function GET() {
         createdAt: 'desc'
       }
     })
-    return NextResponse.json(menuItems)
+    const normalized = menuItems.map((item) => ({
+      ...item,
+      inventoryItem: item.inventoryItem
+        ? { ...item.inventoryItem, ...locationStocks(item.inventoryItem) }
+        : null
+    }))
+    return NextResponse.json(normalized)
   } catch (error) {
     console.error('Failed to fetch menu items:', error)
     return NextResponse.json({ error: 'Failed to fetch menu items' }, { status: 500 })

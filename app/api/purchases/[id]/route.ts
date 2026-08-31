@@ -4,11 +4,12 @@ import prisma from '@/lib/prisma'
 // PUT /api/purchases/[id] - Update purchase
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const body = await request.json()
-    const id = parseInt(params.id)
+    const { id: paramId } = await context.params
+    const id = parseInt(paramId)
     
     // Recalculate amounts if needed
     const subtotal = body.subtotal !== undefined ? body.subtotal : undefined
@@ -56,10 +57,11 @@ export async function PUT(
 // DELETE /api/purchases/[id] - Delete purchase
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const id = parseInt(params.id)
+    const { id: paramId } = await context.params
+    const id = parseInt(paramId)
     await prisma.purchase.delete({
       where: { id }
     })

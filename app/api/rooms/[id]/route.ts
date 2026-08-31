@@ -2,6 +2,21 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { canonicalizeRoomTypeName } from '@/lib/hotel'
 
+function formatRoom(room: { features: string; roomNumbers: string | null }) {
+  let features: string[] = []
+  try {
+    features = JSON.parse(room.features)
+  } catch {
+    features = []
+  }
+
+  return {
+    ...room,
+    features,
+    roomNumbers: room.roomNumbers ? room.roomNumbers.split(',').map((n) => n.trim()).filter(Boolean) : []
+  }
+}
+
 // PUT /api/rooms/[id] - Update room
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -52,7 +67,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       })
     }
     
-    return NextResponse.json(room)
+    return NextResponse.json(formatRoom(room))
   } catch (error) {
     console.error('Error updating room:', error)
     return NextResponse.json({ error: 'Failed to update room' }, { status: 500 })

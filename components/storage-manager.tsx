@@ -99,7 +99,7 @@ export default function StorageManager() {
             <div>
               <p className="font-semibold text-green-900">✅ Database Migration Complete!</p>
               <p className="text-sm text-green-700 mt-1">
-                All data has been successfully migrated from localStorage to SQLite database. 
+                All data has been successfully migrated from localStorage to a PostgreSQL database (Neon).
                 Your system is now using a proper database for all operations.
               </p>
             </div>
@@ -181,12 +181,12 @@ export default function StorageManager() {
           <div className="p-4 border rounded-lg">
             <div className="flex items-start justify-between">
               <div>
-                <h3 className="font-semibold">Database File</h3>
+                <h3 className="font-semibold">Database Connection</h3>
                 <p className="text-sm text-gray-600 mt-1">
-                  Location: <code className="bg-gray-100 px-2 py-1 rounded">prisma/dev.db</code>
+                  Provider: <code className="bg-gray-100 px-2 py-1 rounded">PostgreSQL (Neon)</code>
                 </p>
                 <p className="text-xs text-gray-500 mt-2">
-                  SQLite database file - can be backed up by copying this file
+                  Remote database configured via the DATABASE_URL environment variable - back up using Neon's dashboard or pg_dump
                 </p>
               </div>
               <HardDrive className="w-5 h-5 text-gray-400" />
@@ -204,11 +204,11 @@ export default function StorageManager() {
           </CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-blue-800 space-y-2">
-          <p>✅ <strong>All data is now stored in SQLite database</strong></p>
+          <p>✅ <strong>All data is now stored in a PostgreSQL (Neon) database</strong></p>
           <p>✅ <strong>localStorage is only used for admin authentication</strong></p>
           <p>✅ <strong>Data persists between browser sessions</strong></p>
           <p>✅ <strong>Database supports multiple concurrent users</strong></p>
-          <p>💡 <strong>Backup Tip:</strong> Copy <code className="bg-blue-100 px-1">prisma/dev.db</code> file regularly</p>
+          <p>💡 <strong>Backup Tip:</strong> Use Neon's built-in backup/restore or run <code className="bg-blue-100 px-1">pg_dump</code> regularly</p>
           <p>💡 <strong>Migration Tip:</strong> Use Prisma migrations for schema changes</p>
         </CardContent>
       </Card>

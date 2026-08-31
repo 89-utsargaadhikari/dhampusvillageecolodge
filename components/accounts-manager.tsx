@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Plus, TrendingUp, TrendingDown, Download, Calendar, CreditCard, AlertCircle, DollarSign, Send, History, FileText } from "lucide-react"
+import { Plus, TrendingUp, TrendingDown, Download, Calendar, CreditCard, AlertCircle, DollarSign, Send, History, FileText, Pencil } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -14,15 +14,25 @@ import { AdminSearch, matchesSearch } from "@/components/admin-search"
 import { AdminLoading, AdminRefreshHint, useAdminLoader } from "@/components/admin-loading"
 // Credit management now fully database-driven
 import { addNotification } from "@/lib/notifications"
-import { 
+import { roundMoney } from "@/lib/vat"
+import {
   fetchAccountTransactions,
   createAccountTransaction,
+  updateAccountTransaction,
   deleteAccountTransaction,
   fetchCreditAccounts,
   createCreditAccount,
   updateCreditAccount as updateCreditAPI,
   addCreditPayment
 } from "@/lib/api"
+
+interface CreditPayment {
+  id: number
+  amount: number
+  paymentDate: string
+  paymentMethod: string
+  description: string | null
+}
 
 interface CreditAccount {
   id: number
@@ -38,7 +48,7 @@ interface CreditAccount {
   linkedBookingId: number | null
   notes: string | null
   lastReminderSent: string | null
-  payments: any[]
+  payments: CreditPayment[]
 }
 
 interface Transaction {
@@ -50,6 +60,10 @@ interface Transaction {
   amount: number
   currency: string
   paymentMethod: string
+  partyName?: string | null
+  invoiceNo?: string | null
+  taxPercentage?: number | null
+  taxAmount?: number | null
 }
 
 export default function AccountsManager() {
@@ -57,6 +71,8 @@ export default function AccountsManager() {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [creditAccounts, setCreditAccounts] = useState<CreditAccount[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null)
   const [isCreditDialogOpen, setIsCreditDialogOpen] = useState(false)
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false)
   const [isHistoryDialogOpen, setIsHistoryDialogOpen] = useState(false)
@@ -101,7 +117,7 @@ export default function AccountsManager() {
     }
   }
 
-  const handleAddTransaction = async (txn: Omit<Transaction, "id">) => {
+  const handleAddTransaction = async (txn: Omit<Transaction, "id"> & { notes?: string }) => {
     try {
       await createAccountTransaction({
         date: txn.date,
@@ -111,6 +127,10 @@ export default function AccountsManager() {
         amount: txn.amount,
         currency: txn.currency || 'NPR',
         paymentMethod: txn.paymentMethod,
+        partyName: txn.partyName,
+        invoiceNo: txn.invoiceNo,
+        taxPercentage: txn.taxPercentage,
+        taxAmount: txn.taxAmount,
         notes: txn.notes
       })
       setIsDialogOpen(false)
@@ -118,6 +138,59 @@ export default function AccountsManager() {
     } catch (error) {
       console.error('Failed to add transaction:', error)
       alert('Failed to add transaction')
+    }
+  }
+
+  const handleEditClick = (txn: Transaction) => {
+    setEditingTransaction(txn)
+    setIsEditDialogOpen(true)
+  }
+
+  const handleEditTransaction = async (id: number, txn: Omit<Transaction, "id"> & { notes?: string }) => {
+    try {
+      await updateAccountTransaction(id, {
+        date: txn.date,
+        type: txn.type,
+        category: txn.category,
+        description: txn.description,
+        amount: txn.amount,
+        currency: txn.currency || 'NPR',
+        paymentMethod: txn.paymentMethod,
+        partyName: txn.partyName,
+        invoiceNo: txn.invoiceNo,
+        taxPercentage: txn.taxPercentage,
+        taxAmount: txn.taxAmount,
+        notes: txn.notes
+      })
+      setIsEditDialogOpen(false)
+      setEditingTransaction(null)
+      loadData()
+    } catch (error) {
+      console.error('Failed to update transaction:', error)
+      alert('Failed to update transaction')
+    }
+  }
+
+  const handlePayment = async (
+    creditAccountId: number,
+    amount: number,
+    paymentMethod: FormDataEntryValue | null,
+    description: string
+  ) => {
+    try {
+      await addCreditPayment({
+        creditAccountId,
+        amount,
+        paymentMethod: paymentMethod as string,
+        description,
+        paymentDate: new Date().toISOString().split("T")[0]
+      })
+      await loadData()
+      setIsPaymentDialogOpen(false)
+      setSelectedAccount(null)
+    } catch (error) {
+      console.error('Failed to record payment:', error)
+      alert('Failed to record payment')
     }
   }
 
@@ -139,7 +212,7 @@ export default function AccountsManager() {
     return txnDate.getMonth() === selectedMonth && txnDate.getFullYear() === selectedYear
   })
   const visibleTransactions = filteredTransactions.filter((t) =>
-    matchesSearch(searchQuery, t.description, t.category, t.type, t.paymentMethod, t.amount, t.currency)
+    matchesSearch(searchQuery, t.description, t.category, t.type, t.paymentMethod, t.amount, t.currency, t.partyName, t.invoiceNo)
   )
   const visibleCredits = creditAccounts.filter((account) =>
     matchesSearch(searchQuery, account.guestName, account.guestPhone, account.guestEmail, account.status, account.notes, account.linkedBookingId)
@@ -157,9 +230,9 @@ export default function AccountsManager() {
 
   const handleExportExcel = () => {
     const csvContent = [
-      ["Date", "Type", "Category", "Description", "Amount", "Currency", "Payment Method"],
+      ["Date", "Type", "Category", "Description", "Party", "Invoice No", "Amount", "Currency", "VAT %", "Payment Method"],
       ...filteredTransactions.map(t => [
-        t.date, t.type, t.category, t.description, t.amount, t.currency, t.paymentMethod
+        t.date, t.type, t.category, t.description, t.partyName || "", t.invoiceNo || "", t.amount, t.currency, t.taxPercentage || 0, t.paymentMethod
       ])
     ].map(row => row.join(",")).join("\n")
 
@@ -360,7 +433,9 @@ export default function AccountsManager() {
                   <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Type</th>
                   <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Category</th>
                   <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Description</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Party / Invoice</th>
                   <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Amount</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">VAT</th>
                   <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Payment</th>
                   <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Actions</th>
                 </tr>
@@ -376,14 +451,31 @@ export default function AccountsManager() {
                     </td>
                     <td className="px-3 sm:px-6 py-4">{txn.category}</td>
                     <td className="px-3 sm:px-6 py-4">{txn.description}</td>
+                    <td className="px-3 sm:px-6 py-4 text-sm">
+                      {txn.partyName && <div className="font-medium">{txn.partyName}</div>}
+                      {txn.invoiceNo && <div className="text-xs text-gray-500">Inv# {txn.invoiceNo}</div>}
+                      {!txn.partyName && !txn.invoiceNo && <span className="text-gray-400">—</span>}
+                    </td>
                     <td className="px-3 sm:px-6 py-4 font-bold whitespace-nowrap">{txn.currency} {txn.amount.toLocaleString()}</td>
+                    <td className="px-3 sm:px-6 py-4">
+                      {(txn.taxPercentage ?? 0) > 0 ? (
+                        <Badge variant="outline" className="text-xs whitespace-nowrap">VAT {txn.taxPercentage}%</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-xs text-gray-500">Non-VAT</Badge>
+                      )}
+                    </td>
                     <td className="px-3 sm:px-6 py-4">
                       <Badge variant="outline">{txn.paymentMethod}</Badge>
                     </td>
                     <td className="px-3 sm:px-6 py-4">
-                      <Button size="sm" variant="destructive" onClick={() => handleDelete(txn.id)}>
-                        Delete
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" onClick={() => handleEditClick(txn)}>
+                          <Pencil className="w-3 h-3" />
+                        </Button>
+                        <Button size="sm" variant="destructive" onClick={() => handleDelete(txn.id)}>
+                          Delete
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -630,21 +722,28 @@ export default function AccountsManager() {
           <form onSubmit={(e) => {
             e.preventDefault()
             const formData = new FormData(e.currentTarget)
+            const amount = parseFloat(formData.get("amount") as string)
+            const vatStatus = formData.get("vatStatus") as string
+            const taxPercentage = vatStatus === "vat" ? 13 : 0
             handleAddTransaction({
               date: formData.get("date") as string,
               type: formData.get("type") as "income" | "expense",
               category: formData.get("category") as string,
               description: formData.get("description") as string,
-              amount: parseFloat(formData.get("amount") as string),
+              partyName: (formData.get("partyName") as string) || null,
+              invoiceNo: (formData.get("invoiceNo") as string) || null,
+              amount,
               currency: formData.get("currency") as string,
-              paymentMethod: formData.get("paymentMethod") as string
+              paymentMethod: formData.get("paymentMethod") as string,
+              taxPercentage,
+              taxAmount: roundMoney(amount * (taxPercentage / 100))
             })
           }} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="date">Date *</Label>
               <Input id="date" name="date" type="date" required defaultValue={new Date().toISOString().split("T")[0]} />
             </div>
-            
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="type">Type *</Label>
@@ -684,6 +783,17 @@ export default function AccountsManager() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
+                <Label htmlFor="partyName">Party / Vendor Name</Label>
+                <Input id="partyName" name="partyName" placeholder="Who it was with" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="invoiceNo">Invoice No.</Label>
+                <Input id="invoiceNo" name="invoiceNo" placeholder="Bill/invoice number" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
                 <Label htmlFor="amount">Amount *</Label>
                 <Input id="amount" name="amount" type="number" step="0.01" required />
               </div>
@@ -702,20 +812,34 @@ export default function AccountsManager() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="paymentMethod">Payment Method *</Label>
-              <Select name="paymentMethod" required>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select method" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="cash">Cash</SelectItem>
-                  <SelectItem value="card">Card</SelectItem>
-                  <SelectItem value="qr">QR/UPI</SelectItem>
-                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                  <SelectItem value="credit">Credit</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="paymentMethod">Payment Method *</Label>
+                <Select name="paymentMethod" required>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select method" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cash">Cash</SelectItem>
+                    <SelectItem value="card">Card</SelectItem>
+                    <SelectItem value="qr">QR/UPI</SelectItem>
+                    <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                    <SelectItem value="credit">Credit</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="vatStatus">VAT Status *</Label>
+                <Select name="vatStatus" defaultValue="non_vat" required>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="vat">VAT (13%)</SelectItem>
+                    <SelectItem value="non_vat">Non-VAT</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             <div className="flex gap-2 pt-4">
@@ -727,7 +851,151 @@ export default function AccountsManager() {
           </form>
         </DialogContent>
       </Dialog>
-      
+
+      {/* Edit Transaction Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={(open) => {
+        setIsEditDialogOpen(open)
+        if (!open) setEditingTransaction(null)
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Transaction</DialogTitle>
+          </DialogHeader>
+          {editingTransaction && (
+            <form key={editingTransaction.id} onSubmit={(e) => {
+              e.preventDefault()
+              const formData = new FormData(e.currentTarget)
+              const amount = parseFloat(formData.get("amount") as string)
+              const vatStatus = formData.get("vatStatus") as string
+              const taxPercentage = vatStatus === "vat" ? 13 : 0
+              handleEditTransaction(editingTransaction.id, {
+                date: formData.get("date") as string,
+                type: formData.get("type") as "income" | "expense",
+                category: formData.get("category") as string,
+                description: formData.get("description") as string,
+                partyName: (formData.get("partyName") as string) || null,
+                invoiceNo: (formData.get("invoiceNo") as string) || null,
+                amount,
+                currency: formData.get("currency") as string,
+                paymentMethod: formData.get("paymentMethod") as string,
+                taxPercentage,
+                taxAmount: roundMoney(amount * (taxPercentage / 100))
+              })
+            }} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-date">Date *</Label>
+                <Input id="edit-date" name="date" type="date" required defaultValue={editingTransaction.date?.split("T")[0]} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-type">Type *</Label>
+                  <Select name="type" required defaultValue={editingTransaction.type}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="income">Income</SelectItem>
+                      <SelectItem value="expense">Expense</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-category">Category *</Label>
+                  <Select name="category" required defaultValue={editingTransaction.category}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="room_booking">Room Booking</SelectItem>
+                      <SelectItem value="restaurant">Restaurant</SelectItem>
+                      <SelectItem value="bar">Bar</SelectItem>
+                      <SelectItem value="salary">Salary</SelectItem>
+                      <SelectItem value="utilities">Utilities</SelectItem>
+                      <SelectItem value="supplies">Supplies</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-description">Description *</Label>
+                <Input id="edit-description" name="description" required defaultValue={editingTransaction.description} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-partyName">Party / Vendor Name</Label>
+                  <Input id="edit-partyName" name="partyName" placeholder="Who it was with" defaultValue={editingTransaction.partyName || ""} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-invoiceNo">Invoice No.</Label>
+                  <Input id="edit-invoiceNo" name="invoiceNo" placeholder="Bill/invoice number" defaultValue={editingTransaction.invoiceNo || ""} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-amount">Amount *</Label>
+                  <Input id="edit-amount" name="amount" type="number" step="0.01" required defaultValue={editingTransaction.amount} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-currency">Currency *</Label>
+                  <Select name="currency" defaultValue={editingTransaction.currency} required>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="NPR">NPR</SelectItem>
+                      <SelectItem value="USD">USD</SelectItem>
+                      <SelectItem value="EUR">EUR</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-paymentMethod">Payment Method *</Label>
+                  <Select name="paymentMethod" required defaultValue={editingTransaction.paymentMethod}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select method" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cash">Cash</SelectItem>
+                      <SelectItem value="card">Card</SelectItem>
+                      <SelectItem value="qr">QR/UPI</SelectItem>
+                      <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                      <SelectItem value="credit">Credit</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-vatStatus">VAT Status *</Label>
+                  <Select name="vatStatus" required defaultValue={(editingTransaction.taxPercentage ?? 0) > 0 ? "vat" : "non_vat"}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="vat">VAT (13%)</SelectItem>
+                      <SelectItem value="non_vat">Non-VAT</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-4">
+                <Button type="button" variant="outline" onClick={() => { setIsEditDialogOpen(false); setEditingTransaction(null) }} className="flex-1">
+                  Cancel
+                </Button>
+                <Button type="submit" className="flex-1">Save Changes</Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Add Credit Account Dialog */}
       <Dialog open={isCreditDialogOpen} onOpenChange={setIsCreditDialogOpen}>
         <DialogContent className="max-w-2xl">
@@ -980,33 +1248,28 @@ export default function AccountsManager() {
                 </CardContent>
               </Card>
 
-              {/* Transaction List */}
+              {/* Payment List */}
               <div className="space-y-2">
-                <h4 className="font-semibold">Transaction History</h4>
+                <h4 className="font-semibold">Payment History</h4>
                 <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {selectedAccount.transactions.map(txn => (
-                    <div key={txn.id} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
-                      <div className={`mt-1 w-2 h-2 rounded-full ${
-                        txn.type === "credit_given" ? "bg-blue-500" :
-                        txn.type === "payment_received" ? "bg-green-500" : "bg-gray-500"
-                      }`} />
+                  {(!selectedAccount.payments || selectedAccount.payments.length === 0) && (
+                    <p className="text-sm text-gray-500 text-center py-6">No payments recorded yet</p>
+                  )}
+                  {selectedAccount.payments?.map(payment => (
+                    <div key={payment.id} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                      <div className="mt-1 w-2 h-2 rounded-full bg-green-500" />
                       <div className="flex-1">
                         <div className="flex justify-between items-start">
                           <div>
-                            <p className="font-medium text-sm">{txn.description}</p>
-                            <p className="text-xs text-gray-500">{new Date(txn.date).toLocaleDateString()}</p>
-                            {txn.receivedBy && (
-                              <p className="text-xs text-gray-500">Received by: {txn.receivedBy}</p>
-                            )}
+                            <p className="font-medium text-sm">{payment.description || "Payment received"}</p>
+                            <p className="text-xs text-gray-500">{new Date(payment.paymentDate).toLocaleDateString()}</p>
                           </div>
                           <div className="text-right">
-                            <p className={`font-bold ${
-                              txn.type === "payment_received" ? "text-green-600" : ""
-                            }`}>
-                              {txn.type === "payment_received" ? "+" : ""}NPR {txn.amount.toLocaleString()}
+                            <p className="font-bold text-green-600">
+                              +NPR {payment.amount.toLocaleString()}
                             </p>
-                            {txn.paymentMethod && (
-                              <Badge variant="outline" className="text-xs">{txn.paymentMethod}</Badge>
+                            {payment.paymentMethod && (
+                              <Badge variant="outline" className="text-xs">{payment.paymentMethod}</Badge>
                             )}
                           </div>
                         </div>

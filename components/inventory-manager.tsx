@@ -180,9 +180,13 @@ export default function InventoryManager() {
       })
       if (response.ok) {
         fetchItems()
+      } else {
+        const data = await response.json().catch(() => ({}))
+        alert(data.error || "Failed to delete item")
       }
     } catch (error) {
       console.error("Failed to delete item:", error)
+      alert("Failed to delete item")
     }
   }
 

@@ -33,6 +33,7 @@ interface InventoryLink {
   storeStock: number
   barStock: number
   currentStock: number
+  lowStockLevel: number
 }
 
 interface MenuItem {
@@ -316,16 +317,24 @@ export default function RestaurantManager() {
       console.log('🔵 Editing order:', editingOrder)
       
       const inclusiveSubtotal = orderData.items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0)
-      const totals = calculateInclusiveVat({ inclusiveSubtotal })
-      
+      // Preserve the order's existing discount/tax rate — this dialog has no discount editor,
+      // so editing items should not silently wipe a discount applied some other way.
+      const vatPercent = editingOrder.taxPercentage ?? DEFAULT_VAT_PERCENT
+      const totals = calculateInclusiveVat({
+        inclusiveSubtotal,
+        vatPercent,
+        discountType: editingOrder.discountType,
+        discountValue: editingOrder.discountValue,
+      })
+
       const orderPayload = {
         items: orderData.items,
         subtotal: totals.inclusiveSubtotal,
-        discountType: null,
-        discountValue: 0,
-        discountAmount: 0,
+        discountType: editingOrder.discountType || null,
+        discountValue: editingOrder.discountValue || 0,
+        discountAmount: totals.discountAmount,
         tax: totals.vatAmount,
-        taxPercentage: DEFAULT_VAT_PERCENT,
+        taxPercentage: vatPercent,
         total: totals.total,
       }
       
@@ -674,7 +683,7 @@ export default function RestaurantManager() {
                       {item.inventoryItem ? (
                         <div className="text-sm">
                           <p>{item.inventoryItem.storeStock} / {item.inventoryItem.barStock} {item.inventoryItem.unit}</p>
-                          {item.inventoryItem.barStock <= 5 && (
+                          {item.inventoryItem.barStock <= item.inventoryItem.lowStockLevel && (
                             <p className="text-orange-600 text-xs">Low bar stock</p>
                           )}
                         </div>

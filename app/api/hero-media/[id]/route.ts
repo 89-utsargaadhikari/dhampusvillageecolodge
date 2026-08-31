@@ -4,10 +4,11 @@ import prisma from "@/lib/prisma"
 // DELETE hero media
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const id = parseInt(params.id)
+    const { id: paramId } = await context.params
+    const id = parseInt(paramId)
     
     await prisma.heroMedia.delete({
       where: { id },
@@ -23,10 +24,11 @@ export async function DELETE(
 // PUT update hero media
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const id = parseInt(params.id)
+    const { id: paramId } = await context.params
+    const id = parseInt(paramId)
     const body = await request.json()
     const { type, url, order } = body
 

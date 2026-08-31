@@ -59,9 +59,18 @@ export default function HeroSettingsManager() {
     try {
       const data = await fetchHeroSettings()
       if (data) {
-        setSettings(data)
-        setImagePreview(data.backgroundImage)
-        setVideoPreview(data.videoUrl || "")
+        // API stores a single background as { backgroundType, backgroundUrl },
+        // not the legacy { backgroundImage, videoUrl } shape - translate here.
+        const isVideo = data.backgroundType === "video"
+        const backgroundUrl = data.backgroundUrl || ""
+        setSettings({
+          backgroundImage: isVideo ? "" : backgroundUrl,
+          videoUrl: isVideo ? backgroundUrl : "",
+          title: data.title || "",
+          subtitle: data.subtitle || "",
+        })
+        setImagePreview(isVideo ? "" : backgroundUrl)
+        setVideoPreview(isVideo ? backgroundUrl : "")
       }
     } catch (error) {
       console.error('Failed to load hero settings:', error)
@@ -111,7 +120,14 @@ export default function HeroSettingsManager() {
   const handleSave = async () => {
     setSaving(true)
     try {
-      await updateHeroSettings(settings)
+      // Translate the component's { backgroundImage, videoUrl } fields back to
+      // the API's { backgroundType, backgroundUrl } shape (see loadSettings).
+      await updateHeroSettings({
+        backgroundType: settings.videoUrl ? "video" : "image",
+        backgroundUrl: settings.videoUrl || settings.backgroundImage || "",
+        title: settings.title,
+        subtitle: settings.subtitle,
+      })
       setIsSaved(true)
       setTimeout(() => setIsSaved(false), 3000)
     } catch (error) {

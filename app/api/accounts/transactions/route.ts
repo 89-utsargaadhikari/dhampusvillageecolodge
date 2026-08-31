@@ -38,6 +38,8 @@ export async function POST(request: NextRequest) {
         amountNPR: amountNPR,
         exchangeRate: exchangeRate,
         paymentMethod: body.paymentMethod || null,
+        partyName: body.partyName || null,
+        invoiceNo: body.invoiceNo || null,
         referenceType: body.referenceType || 'manual',
         referenceId: body.referenceId ? parseInt(body.referenceId) : null,
         taxAmount: body.taxAmount ? parseFloat(body.taxAmount) : 0,
