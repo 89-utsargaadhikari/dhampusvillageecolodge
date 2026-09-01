@@ -17,10 +17,11 @@ export async function GET(
           include: {
             menuItem: true
           }
-        }
+        },
+        business: { select: { id: true, name: true } }
       }
     })
-    
+
     if (!order) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
     }
@@ -73,6 +74,7 @@ export async function PUT(
       const updateData: any = {}
       if (body.status !== undefined) updateData.status = body.status
       if (body.guestName !== undefined) updateData.guestName = body.guestName
+      if (body.businessId !== undefined) updateData.businessId = body.businessId ? parseInt(body.businessId) : null
       if (body.paymentStatus !== undefined) updateData.paymentStatus = body.paymentStatus
       if (body.paymentMethod !== undefined) updateData.paymentMethod = body.paymentMethod
       if (body.subtotal !== undefined) updateData.subtotal = body.subtotal
@@ -91,7 +93,8 @@ export async function PUT(
             include: {
               menuItem: true
             }
-          }
+          },
+          business: { select: { id: true, name: true } }
         }
       })
 

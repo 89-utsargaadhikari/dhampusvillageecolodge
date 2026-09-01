@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Plus, Minus, Edit, Trash2, ShoppingCart, Search } from "lucide-react"
 import { calculateInclusiveVat, DEFAULT_VAT_PERCENT } from "@/lib/vat"
 import { AdminSearch, matchesSearch } from "@/components/admin-search"
-import { fetchBookings } from "@/lib/api"
+import { fetchBookings, fetchBusinesses } from "@/lib/api"
 import { 
   fetchRestaurantMenu, 
   createMenuItem, 
@@ -86,8 +86,10 @@ export default function RestaurantManager() {
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null)
   const [editingOrder, setEditingOrder] = useState<Order | null>(null)
   const [bookings, setBookings] = useState<any[]>([])
+  const [businesses, setBusinesses] = useState<any[]>([])
   const [selectedItems, setSelectedItems] = useState<OrderItem[]>([])
   const [orderType, setOrderType] = useState<"room_service" | "walk_in">("room_service")
+  const [walkInBusinessId, setWalkInBusinessId] = useState<string>("none")
   const [menuSearch, setMenuSearch] = useState("")
   const [catalogSearch, setCatalogSearch] = useState("")
   const [inventorySearch, setInventorySearch] = useState("")
@@ -108,14 +110,16 @@ export default function RestaurantManager() {
   const loadData = async () => {
     try {
       await run(async () => {
-      const [menu, orders, allBookings] = await Promise.all([
+      const [menu, orders, allBookings, allBusinesses] = await Promise.all([
         fetchRestaurantMenu(),
         fetchRestaurantOrders(),
-        fetchBookings()
+        fetchBookings(),
+        fetchBusinesses().catch(() => [])
       ])
-      
+
       setMenuItems(menu)
       setOrders(orders)
+      setBusinesses((allBusinesses || []).filter((business: any) => business.active !== false))
       
       // ONLY "Checked In" guests can order from restaurant
       const checkedInBookings = allBookings.filter((b: any) => 
@@ -269,6 +273,7 @@ export default function RestaurantManager() {
         roomNumber: orderData.orderType === "walk_in" ? (orderData.tableNumber || "Walk-in") : orderData.roomNumber,
         guestName: orderData.orderType === "walk_in" ? (orderData.guestName || "Walk-in Guest") : orderData.guestName,
         bookingId: orderData.orderType === "walk_in" ? null : (bookings.find((b: any) => b.roomNumber === orderData.roomNumber)?.id || null),
+        businessId: orderData.orderType === "walk_in" && orderData.businessId ? parseInt(orderData.businessId) : null,
         orderType: orderData.orderType,
         items: orderData.items,
         subtotal: totals.inclusiveSubtotal,
@@ -879,6 +884,7 @@ export default function RestaurantManager() {
           setEditingOrder(null)
           setSelectedItems([])
           setOrderType("room_service")
+          setWalkInBusinessId("none")
           setMenuSearch("")
         }
       }}>
@@ -917,10 +923,11 @@ export default function RestaurantManager() {
               handleCreateOrder({
                 orderType,
                 roomNumber: formData.get("roomNumber") as string,
-                guestName: orderType === "walk_in" 
+                guestName: orderType === "walk_in"
                   ? (formData.get("walkInGuestName") as string)
                   : (formData.get("guestName") as string),
                 tableNumber: orderType === "walk_in" ? (formData.get("tableNumber") as string) : undefined,
+                businessId: orderType === "walk_in" && walkInBusinessId !== "none" ? walkInBusinessId : undefined,
                 items: selectedItems
               })
             }
@@ -1008,20 +1015,37 @@ export default function RestaurantManager() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="walkInGuestName">Guest Name</Label>
-                  <Input 
-                    id="walkInGuestName" 
-                    name="walkInGuestName" 
+                  <Input
+                    id="walkInGuestName"
+                    name="walkInGuestName"
                     placeholder="Enter guest name"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="tableNumber">Table Number *</Label>
-                  <Input 
-                    id="tableNumber" 
-                    name="tableNumber" 
+                  <Input
+                    id="tableNumber"
+                    name="tableNumber"
                     placeholder="e.g., T1, T2, etc."
                     required
                   />
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="walkInBusiness">Bill to Company (optional)</Label>
+                  <Select value={walkInBusinessId} onValueChange={setWalkInBusinessId}>
+                    <SelectTrigger id="walkInBusiness">
+                      <SelectValue placeholder="No company — bill guest directly" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No company — bill guest directly</SelectItem>
+                      {businesses.map((business) => (
+                        <SelectItem key={business.id} value={String(business.id)}>{business.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    If unpaid at checkout, this bill goes to the company&rsquo;s credit account instead of the guest.
+                  </p>
                 </div>
               </div>
             )}

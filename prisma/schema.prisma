@@ -97,6 +97,7 @@ model Business {
   bookings       Booking[]
   creditAccounts CreditAccount[]
   rateCards      BusinessRateCard[]
+  restaurantOrders RestaurantOrder[]
 }
 
 // Business Rate Cards - Fixed rates per business per room type per meal plan
@@ -185,6 +186,7 @@ model RestaurantOrder {
   orderNumber   String    @unique
   orderDate     DateTime? @default(now())
   bookingId     Int?      // Link to room booking (optional)
+  businessId    Int?      // Link to company/business partner (optional, for walk-in bills billed to a company)
   roomNumber    String?   // For direct room service
   guestName     String?
   orderType     String?   @default("room_service") // "room_service" | "restaurant" | "bar"
@@ -203,6 +205,7 @@ model RestaurantOrder {
   updatedAt     DateTime  @updatedAt
   
   booking     Booking?  @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  business    Business? @relation(fields: [businessId], references: [id])
   items       OrderItem[]
 }
 
@@ -377,7 +380,7 @@ model Vendor {
   phone         String?
   email         String?
   address       String?
-  panNumber     String?   // PAN/VAT number
+  irdNumber     String?   // IRD / PAN / VAT number
   active        Boolean   @default(true)
   notes         String?
   createdAt     DateTime  @default(now())

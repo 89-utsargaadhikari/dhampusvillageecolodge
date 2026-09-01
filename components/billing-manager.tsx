@@ -229,8 +229,8 @@ export default function BillingManager() {
         guest: order.guestName,
         email: "",
         phone: "",
-        businessId: null,
-        business: null,
+        businessId: order.businessId || null,
+        business: order.business || null,
         roomNumber: order.roomNumber,
         checkin: new Date(order.createdAt).toISOString().split("T")[0],
         checkout: new Date(order.createdAt).toISOString().split("T")[0],
@@ -323,6 +323,7 @@ Thank you for staying with us!
       payload.tax = selectedBillAmounts.vat
       payload.taxPercentage = checkoutVatPercent
       payload.total = selectedBillAmounts.totalAmount
+      payload.businessId = selectedBill?.booking.businessId || null
     }
     await fetch(`/api/restaurant/orders/${order.id}`, {
       method: "PUT",
@@ -379,6 +380,7 @@ Thank you for staying with us!
             type: "income",
             category: "food_beverage",
             description: `Walk-in Order #${order.orderNumber} - ${order.roomNumber}`,
+            partyName: selectedBill.booking.business?.name || null,
             amount: selectedBillAmounts.totalAmount,
             currency: "NPR",
             paymentMethod: restaurantPaymentMethod
@@ -407,6 +409,7 @@ Thank you for staying with us!
             dueDate: dueDate.toISOString().split("T")[0],
             status: 'unpaid',
             bookingId: null,
+            businessId: selectedBill.booking.businessId || null,
             notes: `Walk-in Order #${order.orderNumber} - ${order.roomNumber}`
           })
           console.log('✅ Credit account created')

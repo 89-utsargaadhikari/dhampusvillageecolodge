@@ -39,6 +39,7 @@ export async function POST(request: NextRequest) {
         dueDate: new Date(body.dueDate),
         status: body.status || 'unpaid',
         bookingId: body.bookingId ? parseInt(body.bookingId) : null,
+        businessId: body.businessId ? parseInt(body.businessId) : null,
         notes: body.notes || null,
         lastReminderSent: body.lastReminderSent ? new Date(body.lastReminderSent) : null
       }
