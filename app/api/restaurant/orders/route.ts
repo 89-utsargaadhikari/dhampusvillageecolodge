@@ -7,7 +7,8 @@ export async function GET() {
   try {
     const orders = await prisma.restaurantOrder.findMany({
       include: {
-        items: true
+        items: true,
+        business: { select: { id: true, name: true } }
       },
       orderBy: {
         createdAt: 'desc'
@@ -44,6 +45,7 @@ export async function POST(request: NextRequest) {
           roomNumber: body.roomNumber,
           guestName: body.guestName,
           bookingId: body.bookingId || null,
+          businessId: body.businessId ? parseInt(body.businessId) : null,
           subtotal: totals.inclusiveSubtotal,
           discountType: body.discountType || null,
           discountValue: body.discountValue || 0,

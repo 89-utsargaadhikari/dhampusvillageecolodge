@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { LayoutDashboard, Calendar, CalendarDays, Bed, ImageIcon, ArrowLeft, Video, Settings, DoorOpen, Hash, HardDrive, UtensilsCrossed, Wallet, Receipt, X, Building2, Briefcase, Package, TrendingUp, Search } from "lucide-react"
+import { LayoutDashboard, Calendar, CalendarDays, Bed, ImageIcon, ArrowLeft, Video, Settings, DoorOpen, Hash, HardDrive, UtensilsCrossed, Wallet, Receipt, X, Building2, Briefcase, Package, TrendingUp, Search, ChevronDown } from "lucide-react"
 import Link from "next/link"
 import { matchesSearch } from "@/components/admin-search"
 
@@ -16,6 +16,7 @@ interface AdminSidebarProps {
 
 export default function AdminSidebar({ activeTab, setActiveTab, isOpen, onClose }: AdminSidebarProps) {
   const [navSearch, setNavSearch] = useState("")
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const menuItems = [
     { id: "overview", label: "Dashboard", icon: LayoutDashboard },
     { id: "bookings", label: "Bookings", icon: Calendar },
@@ -23,8 +24,14 @@ export default function AdminSidebar({ activeTab, setActiveTab, isOpen, onClose 
     { id: "rooms", label: "Rooms", icon: Bed },
     { id: "room-inventory", label: "Room Numbers", icon: Hash },
     { id: "room-status", label: "Room Status", icon: DoorOpen },
-    { id: "business-partners", label: "Business Partners", icon: Building2 },
-    { id: "business-bookings", label: "Business Bookings", icon: Briefcase },
+    {
+      id: "business-bookings",
+      label: "Business Bookings",
+      icon: Briefcase,
+      children: [
+        { id: "business-partners", label: "Business Partners", icon: Building2 },
+      ],
+    },
     { id: "restaurant", label: "Restaurant (RMS)", icon: UtensilsCrossed },
     { id: "inventory", label: "Inventory", icon: Package },
     { id: "billing", label: "Billing & Checkout", icon: Receipt },
@@ -35,6 +42,12 @@ export default function AdminSidebar({ activeTab, setActiveTab, isOpen, onClose 
     { id: "settings", label: "Site Settings", icon: Settings },
     { id: "storage", label: "Storage Manager", icon: HardDrive },
   ] as const
+
+  const matchesItem = (item: (typeof menuItems)[number]) =>
+    matchesSearch(navSearch, item.label) ||
+    ("children" in item && item.children.some((child) => matchesSearch(navSearch, child.label)))
+
+  const visibleItems = menuItems.filter(matchesItem)
 
   return (
     <>
@@ -80,21 +93,56 @@ export default function AdminSidebar({ activeTab, setActiveTab, isOpen, onClose 
               className="w-full bg-gray-800 text-white text-sm rounded-lg pl-9 pr-3 py-2 placeholder:text-gray-500 outline-none focus:ring-1 focus:ring-green-600"
             />
           </div>
-          {menuItems.filter((item) => matchesSearch(navSearch, item.label)).length === 0 && (
+          {visibleItems.length === 0 && (
             <p className="px-4 py-2 text-sm text-gray-500">No pages match “{navSearch}”.</p>
           )}
-          {menuItems.filter((item) => matchesSearch(navSearch, item.label)).map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center gap-4 px-4 py-3 rounded-lg transition-colors ${
-                activeTab === item.id ? "bg-green-600 text-white" : "text-gray-300 hover:text-white hover:bg-gray-800"
-              }`}
-            >
-              <item.icon size={20} />
-              <span>{item.label}</span>
-            </button>
-          ))}
+          {visibleItems.map((item) => {
+            const children = "children" in item ? item.children : []
+            const hasChildren = children.length > 0
+            const isExpanded = navSearch ? true : !!expanded[item.id]
+            return (
+              <div key={item.id}>
+                <button
+                  onClick={() => {
+                    setActiveTab(item.id)
+                    if (hasChildren) {
+                      setExpanded((prev) => ({ ...prev, [item.id]: !isExpanded }))
+                    }
+                  }}
+                  className={`w-full flex items-center gap-4 px-4 py-3 rounded-lg transition-colors ${
+                    activeTab === item.id ? "bg-green-600 text-white" : "text-gray-300 hover:text-white hover:bg-gray-800"
+                  }`}
+                >
+                  <item.icon size={20} />
+                  <span className="flex-1 text-left">{item.label}</span>
+                  {hasChildren && (
+                    <ChevronDown
+                      size={16}
+                      className={`transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                    />
+                  )}
+                </button>
+                {hasChildren && isExpanded && (
+                  <div className="mt-1 ml-4 pl-3 border-l border-gray-700 space-y-1">
+                    {children
+                      .filter((child) => matchesSearch(navSearch, child.label))
+                      .map((child) => (
+                        <button
+                          key={child.id}
+                          onClick={() => setActiveTab(child.id)}
+                          className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                            activeTab === child.id ? "bg-green-600 text-white" : "text-gray-300 hover:text-white hover:bg-gray-800"
+                          }`}
+                        >
+                          <child.icon size={16} />
+                          <span>{child.label}</span>
+                        </button>
+                      ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </nav>
 
         <div className="p-4 border-t border-gray-700">

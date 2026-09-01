@@ -445,7 +445,34 @@ export const createVendor = async (vendorData: any) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(vendorData)
   })
-  if (!res.ok) throw new Error('Failed to create vendor')
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.error || 'Failed to create vendor')
+  }
+  return res.json()
+}
+
+export const updateVendor = async (id: number, vendorData: any) => {
+  const res = await fetch(`/api/vendors/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(vendorData)
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.error || 'Failed to update vendor')
+  }
+  return res.json()
+}
+
+export const deleteVendor = async (id: number) => {
+  const res = await fetch(`/api/vendors/${id}`, {
+    method: 'DELETE'
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.error || 'Failed to delete vendor')
+  }
   return res.json()
 }
 
