@@ -265,9 +265,11 @@ export default function BillingManager() {
       const allBookings = await fetchBookings()
       console.log("📊 Billing - All bookings:", allBookings.length)
       
-      // Show bookings that are "Confirmed" OR "Checked In" with room numbers
-      const activeBookings = allBookings.filter((b: any) => 
-        (b.status === "Confirmed" || b.status === "Checked In") && b.roomNumber
+      // Show bookings that are "Confirmed" OR "Checked In", regardless of whether
+      // a room number has been assigned yet - a booking without a room is still
+      // billable (guest, dates, price are enough) and shouldn't be hidden here.
+      const activeBookings = allBookings.filter((b: any) =>
+        b.status === "Confirmed" || b.status === "Checked In"
       )
       console.log("✅ Billing - Active bookings ready for checkout:", activeBookings.length)
       console.log("Active bookings:", activeBookings.map((b: any) => `${b.guest} - Room ${b.roomNumber} - Status: ${b.status}`))
