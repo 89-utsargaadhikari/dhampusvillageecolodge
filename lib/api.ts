@@ -545,3 +545,97 @@ export const deleteSale = async (id: number) => {
   return res.json()
 }
 
+// ============================================
+// BILL SPLITS
+// ============================================
+
+export const fetchBillSplits = async (groupKey: string) => {
+  const res = await fetch(`/api/bill-splits?groupKey=${encodeURIComponent(groupKey)}`)
+  if (!res.ok) throw new Error('Failed to fetch bill splits')
+  return res.json()
+}
+
+export const createBillSplit = async (splitData: any) => {
+  const res = await fetch('/api/bill-splits', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(splitData)
+  })
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({}))
+    throw new Error(payload.error || 'Failed to create bill split')
+  }
+  return res.json()
+}
+
+export const updateBillSplit = async (id: number, splitData: any) => {
+  const res = await fetch(`/api/bill-splits/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(splitData)
+  })
+  if (!res.ok) throw new Error('Failed to update bill split')
+  return res.json()
+}
+
+export const deleteBillSplit = async (id: number) => {
+  const res = await fetch(`/api/bill-splits/${id}`, {
+    method: 'DELETE'
+  })
+  if (!res.ok) throw new Error('Failed to delete bill split')
+  return res.json()
+}
+
+export const addBillSplitAllocation = async (billSplitId: number, allocation: any) => {
+  const res = await fetch(`/api/bill-splits/${billSplitId}/allocations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(allocation)
+  })
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({}))
+    throw new Error(payload.error || 'Failed to add allocation')
+  }
+  return res.json()
+}
+
+export const updateBillSplitAllocation = async (
+  billSplitId: number,
+  patch: { allocationId: number; amount?: number; billSplitId?: number }
+) => {
+  const res = await fetch(`/api/bill-splits/${billSplitId}/allocations`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch)
+  })
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({}))
+    throw new Error(payload.error || 'Failed to update allocation')
+  }
+  return res.json()
+}
+
+export const deleteBillSplitAllocation = async (billSplitId: number, allocationId: number) => {
+  const res = await fetch(`/api/bill-splits/${billSplitId}/allocations?allocationId=${allocationId}`, {
+    method: 'DELETE'
+  })
+  if (!res.ok) throw new Error('Failed to delete allocation')
+  return res.json()
+}
+
+export const completeSplitCheckout = async (payload: {
+  groupKey: string
+  splits: { billSplitId: number; paymentStatus: 'paid' | 'credit'; paymentMethod: string | null }[]
+}) => {
+  const res = await fetch('/api/bill-splits/checkout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  if (!res.ok) {
+    const errorPayload = await res.json().catch(() => ({}))
+    throw new Error(errorPayload.error || 'Failed to complete split checkout')
+  }
+  return res.json()
+}
+

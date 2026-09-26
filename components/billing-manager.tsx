@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { Receipt, Download, Printer, Check } from "lucide-react"
+import { Receipt, Download, Printer, Check, X, Split } from "lucide-react"
 import { 
   fetchBookings, 
   updateBooking,
@@ -29,8 +29,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { AdminSearch, matchesSearch } from "@/components/admin-search"
+import { PartnerCombobox } from "@/components/partner-combobox"
 import { AdminLoading, AdminRefreshHint, useAdminLoader } from "@/components/admin-loading"
 import { Spinner } from "@/components/ui/spinner"
+import { BillSplitDialog } from "@/components/bill-split-dialog"
 
 interface Bill {
   booking: any
@@ -63,6 +65,61 @@ function orderReference(orders: any[]) {
   }
 }
 
+// Room numbers get reused across guests, so a bare roomNumber match can pull in a
+// previous guest's orders. Trust bookingId (set when the order was placed) first,
+// and only fall back to roomNumber for legacy orders that never got a bookingId.
+function ordersForBooking(orders: any[], booking: any) {
+  return orders.filter((order) => {
+    if (order.status === "cancelled") return false
+    if (order.bookingId != null) return order.bookingId === booking.id
+    return order.roomNumber === booking.roomNumber
+  })
+}
+
+type BookingGroup = {
+  key: string
+  groupId: string | null
+  members: any[]
+}
+
+// Same grouping approach as components/bookings-manager.tsx: rooms sharing a
+// groupId are one multi-room booking; everything else is its own single-room group.
+function groupBookings(bookings: any[]): BookingGroup[] {
+  const seen = new Set<string>()
+  const groups: BookingGroup[] = []
+  for (const booking of bookings) {
+    if (booking.groupId) {
+      if (seen.has(booking.groupId)) continue
+      seen.add(booking.groupId)
+      groups.push({
+        key: booking.groupId,
+        groupId: booking.groupId,
+        members: bookings.filter((item) => item.groupId === booking.groupId),
+      })
+    } else {
+      groups.push({ key: `single-${booking.id}`, groupId: null, members: [booking] })
+    }
+  }
+  return groups
+}
+
+function groupKeyFor(group: BookingGroup) {
+  return group.groupId || `solo-${group.members[0].id}`
+}
+
+function ordersForGroup(orders: any[], members: any[]) {
+  const seen = new Set<number>()
+  const combined: any[] = []
+  for (const member of members) {
+    for (const order of ordersForBooking(orders, member)) {
+      if (seen.has(order.id)) continue
+      seen.add(order.id)
+      combined.push(order)
+    }
+  }
+  return combined
+}
+
 export default function BillingManager() {
   const [bookings, setBookings] = useState<any[]>([])
   const [orders, setOrders] = useState<any[]>([])
@@ -79,8 +136,8 @@ export default function BillingManager() {
   const [checkoutVatPercent, setCheckoutVatPercent] = useState(DEFAULT_VAT_PERCENT)
   const [searchQuery, setSearchQuery] = useState("")
   const [businesses, setBusinesses] = useState<any[]>([])
-  const [companySearch, setCompanySearch] = useState("")
   const [checkingOut, setCheckingOut] = useState(false)
+  const [splitDialogGroup, setSplitDialogGroup] = useState<BookingGroup | null>(null)
   const { loading, refreshing, run } = useAdminLoader()
 
   const referencedOrders = selectedBill?.restaurantOrders || []
@@ -136,7 +193,7 @@ export default function BillingManager() {
   }
 
   const selectCompany = (value: string) => {
-    if (value === "none") {
+    if (!value) {
       updateBillGuest({ businessId: null, business: null })
       return
     }
@@ -144,6 +201,17 @@ export default function BillingManager() {
     updateBillGuest({
       businessId: partner?.id || null,
       business: partner ? { id: partner.id, name: partner.name } : null,
+    })
+  }
+
+  const removeOrderFromBill = (orderId: number) => {
+    if (!confirm("Remove this order from the bill? It won't be charged to this guest.")) return
+    setSelectedBill((current) => {
+      if (!current) return current
+      const remaining = current.restaurantOrders.filter((order) => order.id !== orderId)
+      const restaurantInclusive = remaining.reduce((sum, order) => sum + orderInclusiveSubtotal(order), 0)
+      applyOrderReference(remaining)
+      return { ...current, restaurantOrders: remaining, restaurantInclusive, restaurantTotal: restaurantInclusive }
     })
   }
 
@@ -194,14 +262,10 @@ export default function BillingManager() {
   const generateBill = (booking: any) => {
     const nights = stayNightsCount(booking.checkin, booking.checkout)
     const roomCharges = parseFloat(booking.price) || 0
-    const roomOrders = orders.filter((order) =>
-      (order.bookingId === booking.id || order.roomNumber === booking.roomNumber) &&
-      order.status !== "cancelled"
-    )
+    const roomOrders = ordersForBooking(orders, booking)
     const restaurantInclusive = roomOrders.reduce((sum, order) => sum + orderInclusiveSubtotal(order), 0)
 
     applyOrderReference(roomOrders)
-    setCompanySearch("")
     setRoomPaymentStatus("paid")
     setRoomPaymentMethod("cash")
     setRestaurantPaymentStatus("paid")
@@ -219,7 +283,6 @@ export default function BillingManager() {
 
   const generateWalkInBill = (order: any) => {
     applyOrderReference([order])
-    setCompanySearch("")
     setRoomPaymentStatus("paid")
     setRoomPaymentMethod("cash")
     setRestaurantPaymentStatus("paid")
@@ -256,7 +319,7 @@ export default function BillingManager() {
 
     const billContent = `
 DHAMPUS ECO LODGE
-Invoice / Bill
+Estimated Bill
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Guest Name: ${selectedBill.booking.guest}
@@ -602,56 +665,81 @@ Thank you for staying with us!
                 </div>
               </div>
             ) : (
-              bookings.filter((booking) => matchesSearch(searchQuery, booking.guest, booking.roomNumber, booking.room, booking.email, booking.phone, booking.status)).map((booking) => {
-                const roomOrders = orders.filter(o => o.roomNumber === booking.roomNumber)
-                const restaurantTotal = roomOrders.reduce((sum, order) => sum + order.total, 0)
-                
-                return (
-                  <Card key={booking.id} className="border-l-4 border-l-primary">
-                    <CardContent className="pt-6">
-                      <div className="flex justify-between items-start">
-                        <div className="space-y-2">
-                          <div>
-                            <p className="text-lg font-bold">{booking.guest}</p>
-                            <p className="text-sm text-gray-600">
-                              Room {booking.roomNumber} • {booking.checkin} to {booking.checkout}
-                            </p>
-                          </div>
-                          <div className="flex gap-4 text-sm">
-                            <div>
-                              <span className="text-gray-600">Room: </span>
-                              <span className="font-semibold">{formatMoney(booking.price, booking.currency)}</span>
-                            </div>
-                            <div>
-                              <span className="text-gray-600">Restaurant: </span>
-                              <span className="font-semibold">NPR {restaurantTotal.toFixed(2)}</span>
-                            </div>
-                            <div>
-                              <span className="text-gray-600">Orders: </span>
-                              <span className="font-semibold">{roomOrders.length}</span>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="text-right space-y-2">
-                          <div>
-                            <p className="text-sm text-gray-600">Estimated Total</p>
-                            <p className="text-2xl font-bold text-primary">
-                              {normalizeCurrency(booking.currency) === "NPR"
-                                ? formatMoney(parseFloat(booking.price || "0") + restaurantTotal, "NPR")
-                                : `${formatMoney(booking.price, booking.currency)} + ${formatMoney(restaurantTotal, "NPR")}`}
-                            </p>
-                            <p className="text-xs text-gray-500">(VAT inclusive)</p>
-                          </div>
-                          <Button onClick={() => generateBill(booking)} className="w-full">
-                            <Receipt className="w-4 h-4 mr-2" />
-                            Generate Bill
-                          </Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+              groupBookings(bookings)
+                .filter((group) =>
+                  group.members.some((booking) =>
+                    matchesSearch(searchQuery, booking.guest, booking.roomNumber, booking.room, booking.email, booking.phone, booking.status)
+                  )
                 )
-              })
+                .map((group) => (
+                  <div key={group.key} className={group.members.length > 1 ? "border-2 border-primary/20 rounded-lg p-3 space-y-3" : ""}>
+                    {group.members.length > 1 && (
+                      <div className="flex justify-between items-center px-1">
+                        <p className="text-sm font-semibold text-primary">Multi-room booking • {group.members.length} rooms</p>
+                        <Button size="sm" variant="outline" onClick={() => setSplitDialogGroup(group)}>
+                          <Split className="w-4 h-4 mr-1" />
+                          Split Bill
+                        </Button>
+                      </div>
+                    )}
+                    {group.members.map((booking) => {
+                      const roomOrders = ordersForBooking(orders, booking)
+                      const restaurantTotal = roomOrders.reduce((sum, order) => sum + order.total, 0)
+
+                      return (
+                        <Card key={booking.id} className="border-l-4 border-l-primary">
+                          <CardContent className="pt-6">
+                            <div className="flex justify-between items-start">
+                              <div className="space-y-2">
+                                <div>
+                                  <p className="text-lg font-bold">{booking.guest}</p>
+                                  <p className="text-sm text-gray-600">
+                                    Room {booking.roomNumber} • {booking.checkin} to {booking.checkout}
+                                  </p>
+                                </div>
+                                <div className="flex gap-4 text-sm">
+                                  <div>
+                                    <span className="text-gray-600">Room: </span>
+                                    <span className="font-semibold">{formatMoney(booking.price, booking.currency)}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-600">Restaurant: </span>
+                                    <span className="font-semibold">NPR {restaurantTotal.toFixed(2)}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-600">Orders: </span>
+                                    <span className="font-semibold">{roomOrders.length}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="text-right space-y-2">
+                                <div>
+                                  <p className="text-sm text-gray-600">Estimated Total</p>
+                                  <p className="text-2xl font-bold text-primary">
+                                    {normalizeCurrency(booking.currency) === "NPR"
+                                      ? formatMoney(parseFloat(booking.price || "0") + restaurantTotal, "NPR")
+                                      : `${formatMoney(booking.price, booking.currency)} + ${formatMoney(restaurantTotal, "NPR")}`}
+                                  </p>
+                                  <p className="text-xs text-gray-500">(VAT inclusive)</p>
+                                </div>
+                                <Button onClick={() => generateBill(booking)} className="w-full">
+                                  <Receipt className="w-4 h-4 mr-2" />
+                                  Generate Bill
+                                </Button>
+                                {group.members.length === 1 && (
+                                  <Button variant="outline" onClick={() => setSplitDialogGroup(group)} className="w-full">
+                                    <Split className="w-4 h-4 mr-2" />
+                                    Split Bill
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )
+                    })}
+                  </div>
+                ))
             )}
           </div>
         </CardContent>
@@ -732,7 +820,7 @@ Thank you for staying with us!
               <div className="text-center border-b pb-4">
                 <h1 className="text-3xl font-bold text-primary">DHAMPUS ECO LODGE</h1>
                 <p className="text-sm text-gray-600">Luxury in the Heart of the Himalayas</p>
-                <p className="text-xs text-gray-500 mt-2">Tax Invoice / Bill</p>
+                <p className="text-xs text-gray-500 mt-2">Estimated Bill</p>
               </div>
 
               <div className="grid md:grid-cols-2 gap-6">
@@ -771,32 +859,13 @@ Thank you for staying with us!
                     </div>
                     <div className="space-y-1 print:hidden">
                       <Label>Company</Label>
-                      <AdminSearch
-                        value={companySearch}
-                        onChange={setCompanySearch}
-                        placeholder="Search business partners..."
-                        className="mb-2"
+                      <PartnerCombobox
+                        partners={businesses}
+                        value={selectedBill.booking.businessId ? String(selectedBill.booking.businessId) : ""}
+                        onChange={selectCompany}
+                        placeholder="Select from business partners"
+                        clearLabel="N/A"
                       />
-                      <Select
-                        value={selectedBill.booking.businessId ? String(selectedBill.booking.businessId) : "none"}
-                        onValueChange={selectCompany}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select from business partners" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">N/A</SelectItem>
-                          {businesses
-                            .filter((business) =>
-                              matchesSearch(companySearch, business.name, business.phone, business.contactPerson, business.email)
-                            )
-                            .map((business) => (
-                              <SelectItem key={business.id} value={String(business.id)}>
-                                {business.name}
-                              </SelectItem>
-                            ))}
-                        </SelectContent>
-                      </Select>
                     </div>
                     <p className="hidden print:block">
                       <span className="text-gray-600">Company:</span> {selectedBill.booking.business?.name || "N/A"}
@@ -837,7 +906,18 @@ Thank you for staying with us!
                       <div key={order.id} className="border-b pb-2">
                         <div className="flex justify-between text-sm font-medium mb-1">
                           <span>Order {order.orderNumber}</span>
-                          <span>{new Date(order.createdAt).toLocaleDateString()}</span>
+                          <span className="flex items-center gap-2">
+                            {new Date(order.createdAt).toLocaleDateString()}
+                            <button
+                              type="button"
+                              onClick={() => removeOrderFromBill(order.id)}
+                              className="text-gray-400 hover:text-red-600 print:hidden"
+                              aria-label={`Remove order ${order.orderNumber} from this bill`}
+                              title="Remove this charge from the bill"
+                            >
+                              <X className="size-3.5" />
+                            </button>
+                          </span>
                         </div>
                         {(order.items || []).map((item: any, idx: number) => (
                           <div key={idx} className="flex justify-between text-xs text-gray-600 ml-4">
@@ -1145,6 +1225,20 @@ Thank you for staying with us!
           </div>
         </DialogContent>
       </Dialog>
+
+      {splitDialogGroup && (
+        <BillSplitDialog
+          open={Boolean(splitDialogGroup)}
+          onOpenChange={(open) => {
+            if (!open) setSplitDialogGroup(null)
+          }}
+          groupKey={groupKeyFor(splitDialogGroup)}
+          bookings={splitDialogGroup.members}
+          orders={ordersForGroup(orders, splitDialogGroup.members)}
+          businesses={businesses}
+          onCompleted={loadData}
+        />
+      )}
     </div>
   )
 }
