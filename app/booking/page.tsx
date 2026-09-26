@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { Calendar, Users, Mail, Phone, User, CreditCard, CheckCircle, Sparkles, Star } from "lucide-react"
+import { Calendar, Users, Mail, Phone, User, CheckCircle, Sparkles, Star, Plus, Trash2, UtensilsCrossed, BedDouble } from "lucide-react"
 import { type Room } from "@/lib/storage"
 import { fetchRooms, createBooking } from "@/lib/api"
-import { currencySymbol, isGuestFacingRoom, occupancyForPax } from "@/lib/hotel"
+import { currencySymbol, isGuestFacingRoom, MEAL_PLANS, OCCUPANCY_TYPES } from "@/lib/hotel"
 import { addNotification } from "@/lib/notifications"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,25 +14,42 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import ScrollProgress from "@/components/scroll-progress"
 
+type CartLine = {
+  key: string
+  room: Room
+  occupancy: string
+  guests: number
+  extraBed: boolean
+}
+
+function occupancyOptionsForRoom(room: Room) {
+  return OCCUPANCY_TYPES.filter((option) => option.pax <= room.capacity)
+}
+
+function defaultOccupancyForRoom(room: Room) {
+  const options = occupancyOptionsForRoom(room)
+  return options.find((option) => option.value === "DBL")?.value || options[0]?.value || "SGL"
+}
+
 export default function BookingPage() {
   const [rooms, setRooms] = useState<Room[]>([])
-  const [selectedRoom, setSelectedRoom] = useState<Room | null>(null)
+  const [cart, setCart] = useState<CartLine[]>([])
   const [bookingComplete, setBookingComplete] = useState(false)
-  const [bookingId, setBookingId] = useState<string>("")
+  const [bookingRef, setBookingRef] = useState<string>("")
   const [formData, setFormData] = useState({
     guest: "",
     email: "",
     phone: "",
     checkin: "",
     checkout: "",
-    guests: "1",
+    bookingType: "EP",
     specialRequests: "",
   })
 
   useEffect(() => {
     loadRooms()
   }, [])
-  
+
   const loadRooms = async () => {
     try {
       const roomsData = await fetchRooms()
@@ -51,17 +68,44 @@ export default function BookingPage() {
     return Math.ceil(diff / (1000 * 3600 * 24))
   }
 
-  const calculateTotal = () => {
-    if (!selectedRoom) return 0
-    const nights = calculateNights()
-    return nights * parseFloat(selectedRoom.price)
+  const lineTotal = (line: CartLine) => calculateNights() * parseFloat(line.room.price)
+
+  const calculateTotal = () => cart.reduce((sum, line) => sum + lineTotal(line), 0)
+
+  const totalGuests = () => cart.reduce((sum, line) => sum + line.guests, 0)
+
+  const cartCurrency = cart[0]?.room.currency || "NPR"
+
+  const addRoomToCart = (room: Room) => {
+    if (cart.length > 0 && (cart[0].room.currency || "NPR") !== (room.currency || "NPR")) {
+      alert(`⚠️ All rooms in one booking must use the same currency (${currencySymbol(cart[0].room.currency)}). Please submit a separate booking for rooms priced in a different currency.`)
+      return
+    }
+    setCart((prev) => [
+      ...prev,
+      {
+        key: `${room.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        room,
+        occupancy: defaultOccupancyForRoom(room),
+        guests: Math.min(2, room.capacity),
+        extraBed: false,
+      },
+    ])
+  }
+
+  const removeCartLine = (key: string) => {
+    setCart((prev) => prev.filter((line) => line.key !== key))
+  }
+
+  const updateCartLine = (key: string, patch: Partial<CartLine>) => {
+    setCart((prev) => prev.map((line) => (line.key === key ? { ...line, ...patch } : line)))
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!selectedRoom) {
-      alert("⚠️ Please select a room")
+    if (cart.length === 0) {
+      alert("⚠️ Please add at least one room to your booking")
       return
     }
 
@@ -93,10 +137,11 @@ export default function BookingPage() {
       return
     }
 
-    const guestCount = parseInt(formData.guests)
-    if (guestCount > selectedRoom.capacity) {
-      alert(`⚠️ This room can accommodate a maximum of ${selectedRoom.capacity} guests.`)
-      return
+    for (const line of cart) {
+      if (line.guests > line.room.capacity) {
+        alert(`⚠️ ${line.room.name} can accommodate a maximum of ${line.room.capacity} guests.`)
+        return
+      }
     }
 
     if (!formData.email.includes("@")) {
@@ -109,34 +154,49 @@ export default function BookingPage() {
       return
     }
 
-    const totalPrice = calculateTotal().toString()
-    
-    try {
-      const newBooking = await createBooking({
-        guest: formData.guest,
-        email: formData.email,
-        phone: formData.phone,
-        room: selectedRoom.name,
-        checkin: formData.checkin,
-        checkout: formData.checkout,
-        price: totalPrice,
-        status: "Pending",
-        bookingSource: "website",
-        numberOfGuests: guestCount,
-        bookingType: "EP",
-        occupancy: occupancyForPax(guestCount),
-        currency: selectedRoom.currency || "NPR",
-      })
+    const roomsPayload = cart.map((line) => ({
+      room: line.room.name,
+      occupancy: line.occupancy,
+      numberOfGuests: line.guests,
+      extraBed: line.extraBed,
+      price: String(lineTotal(line)),
+    }))
 
+    const sharedFields = {
+      guest: formData.guest,
+      email: formData.email,
+      phone: formData.phone,
+      checkin: formData.checkin,
+      checkout: formData.checkout,
+      status: "Pending",
+      bookingSource: "website",
+      bookingType: formData.bookingType,
+      currency: cartCurrency,
+      numberOfGuests: totalGuests(),
+      notes: formData.specialRequests || null,
+    }
+
+    const payload = cart.length > 1
+      ? { ...sharedFields, rooms: roomsPayload }
+      : { ...sharedFields, ...roomsPayload[0] }
+
+    try {
+      const result = await createBooking(payload)
+      const created = Array.isArray(result) ? result : [result]
+      const reference = created.length > 1
+        ? created[0]?.groupId || created.map((b: any) => b.bookingId).join(", ")
+        : created[0]?.bookingId || created[0]?.id
+
+      const roomSummary = cart.map((line) => line.room.name).join(", ")
       addNotification(
         "booking",
         "🌐 New Website Booking",
-        `${formData.guest} - ${selectedRoom.name} (${formData.checkin} to ${formData.checkout})`,
+        `${formData.guest} - ${roomSummary} (${formData.checkin} to ${formData.checkout})`,
         "high",
         "bookings"
       )
 
-      setBookingId(newBooking.id.toString())
+      setBookingRef(String(reference))
       setBookingComplete(true)
     } catch (error) {
       console.error('Failed to create booking:', error)
@@ -167,10 +227,10 @@ export default function BookingPage() {
                 Booking Reference
               </p>
               <p className="text-3xl font-bold bg-gradient-to-r from-green-600 to-yellow-600 bg-clip-text text-transparent">
-                #{bookingId}
+                #{bookingRef}
               </p>
             </div>
-            
+
             <div className="space-y-3 bg-white rounded-xl p-6 border border-green-100">
               <p className="font-semibold flex items-center gap-2 text-green-700">
                 <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
@@ -289,7 +349,7 @@ export default function BookingPage() {
                           className="border-green-200 focus:border-green-500 focus:ring-green-500 transition-all duration-300"
                         />
                       </div>
-                      <div className="space-y-2">
+                      <div className="space-y-2 md:col-span-2">
                         <Label htmlFor="phone" className="text-gray-700">Phone Number *</Label>
                         <Input
                           id="phone"
@@ -300,21 +360,6 @@ export default function BookingPage() {
                           placeholder="+1 234 567 8900"
                           className="border-green-200 focus:border-green-500 focus:ring-green-500 transition-all duration-300"
                         />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="guests" className="text-gray-700">Number of Guests *</Label>
-                        <Select value={formData.guests} onValueChange={(value) => setFormData({ ...formData, guests: value })}>
-                          <SelectTrigger className="border-green-200 focus:border-green-500 focus:ring-green-500">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {[1, 2, 3, 4, 5, 6].map((num) => (
-                              <SelectItem key={num} value={num.toString()}>
-                                {num} {num === 1 ? "Guest" : "Guests"}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
                       </div>
                     </div>
                   </div>
@@ -361,11 +406,35 @@ export default function BookingPage() {
                     )}
                   </div>
 
+                  {/* Meal Plan */}
+                  <div className="space-y-3 p-6 bg-gradient-to-br from-green-50/50 to-yellow-50/50 rounded-xl border border-green-100">
+                    <h3 className="font-semibold text-lg flex items-center gap-2 text-green-700">
+                      <UtensilsCrossed size={20} className="text-yellow-600" />
+                      Meal Plan
+                    </h3>
+                    <Select
+                      value={formData.bookingType}
+                      onValueChange={(value) => setFormData({ ...formData, bookingType: value })}
+                    >
+                      <SelectTrigger className="border-green-200 focus:border-green-500 focus:ring-green-500">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {MEAL_PLANS.map((plan) => (
+                          <SelectItem key={plan.value} value={plan.value}>{plan.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-gray-500">
+                      Room rate shown below is for accommodation only — our team will confirm any meal plan surcharge with you.
+                    </p>
+                  </div>
+
                   {/* Room Selection */}
                   <div className="space-y-4">
                     <h3 className="font-semibold text-xl flex items-center gap-2 text-green-700">
                       <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
-                      Select Your Luxurious Room *
+                      Choose Your Rooms *
                     </h3>
                     <div className="grid gap-4">
                       {rooms.length === 0 ? (
@@ -374,12 +443,7 @@ export default function BookingPage() {
                         rooms.map((room) => (
                           <div
                             key={room.id}
-                            onClick={() => setSelectedRoom(room)}
-                            className={`group border-2 rounded-xl p-5 cursor-pointer transition-all duration-300 transform hover:scale-[1.02] ${
-                              selectedRoom?.id === room.id
-                                ? "border-green-500 bg-gradient-to-r from-green-50 to-yellow-50 shadow-lg ring-2 ring-green-200"
-                                : "border-gray-200 hover:border-green-300 hover:shadow-md"
-                            }`}
+                            className="group border-2 rounded-xl p-5 transition-all duration-300 border-gray-200 hover:border-green-300 hover:shadow-md"
                           >
                             <div className="flex items-start gap-4">
                               <img
@@ -390,7 +454,7 @@ export default function BookingPage() {
                               <div className="flex-1">
                                 <h4 className="font-bold text-xl text-green-700 mb-2">{room.name}</h4>
                                 <p className="text-sm text-gray-600 mb-3">{room.description}</p>
-                                <div className="flex items-center gap-4">
+                                <div className="flex flex-wrap items-center gap-4">
                                   <p className="text-2xl font-bold bg-gradient-to-r from-green-600 to-yellow-600 bg-clip-text text-transparent">
                                     {currencySymbol(room.currency)} {room.price}<span className="text-base text-gray-500">/night</span>
                                   </p>
@@ -398,6 +462,15 @@ export default function BookingPage() {
                                     <Users size={16} />
                                     {room.capacity} guests
                                   </p>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    onClick={() => addRoomToCart(room)}
+                                    className="ml-auto bg-green-600 hover:bg-green-700"
+                                  >
+                                    <Plus size={16} className="mr-1" />
+                                    Add Room
+                                  </Button>
                                 </div>
                               </div>
                             </div>
@@ -407,6 +480,86 @@ export default function BookingPage() {
                     </div>
                   </div>
 
+                  {/* Selected Rooms Cart */}
+                  {cart.length > 0 && (
+                    <div className="space-y-4 p-6 bg-gradient-to-br from-yellow-50/50 to-green-50/50 rounded-xl border-2 border-green-200">
+                      <h3 className="font-semibold text-lg flex items-center gap-2 text-green-700">
+                        <BedDouble size={20} className="text-yellow-600" />
+                        Your Selected Rooms
+                      </h3>
+                      <div className="space-y-3">
+                        {cart.map((line, index) => (
+                          <div key={line.key} className="bg-white rounded-xl border border-green-100 p-4 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <p className="font-semibold text-green-700">Room {index + 1}: {line.room.name}</p>
+                              <button
+                                type="button"
+                                onClick={() => removeCartLine(line.key)}
+                                className="text-gray-400 hover:text-red-600 transition-colors"
+                                aria-label={`Remove ${line.room.name}`}
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            </div>
+                            <div className="grid sm:grid-cols-3 gap-3">
+                              <div className="space-y-1">
+                                <Label className="text-xs text-gray-600">Occupancy</Label>
+                                <Select
+                                  value={line.occupancy}
+                                  onValueChange={(value) => updateCartLine(line.key, { occupancy: value })}
+                                >
+                                  <SelectTrigger className="border-green-200 h-9">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {occupancyOptionsForRoom(line.room).map((option) => (
+                                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-xs text-gray-600">Guests in this room</Label>
+                                <Select
+                                  value={String(line.guests)}
+                                  onValueChange={(value) => updateCartLine(line.key, { guests: parseInt(value) })}
+                                >
+                                  <SelectTrigger className="border-green-200 h-9">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {Array.from({ length: line.room.capacity }, (_, i) => i + 1).map((num) => (
+                                      <SelectItem key={num} value={String(num)}>{num} {num === 1 ? "Guest" : "Guests"}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="flex items-end pb-1">
+                                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={line.extraBed}
+                                    onChange={(e) => updateCartLine(line.key, { extraBed: e.target.checked })}
+                                    className="h-4 w-4 rounded border-green-300 text-green-600 focus:ring-green-500"
+                                  />
+                                  Add extra bed
+                                </label>
+                              </div>
+                            </div>
+                            {calculateNights() > 0 && (
+                              <p className="text-right text-sm text-gray-600">
+                                Subtotal: <span className="font-semibold text-green-700">{currencySymbol(line.room.currency)} {lineTotal(line)}</span>
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        Extra bed charges (if any) will be confirmed by our team based on room type.
+                      </p>
+                    </div>
+                  )}
+
                   {/* Special Requests */}
                   <div className="space-y-2">
                     <Label htmlFor="requests" className="text-gray-700 text-lg">Special Requests (Optional)</Label>
@@ -415,15 +568,15 @@ export default function BookingPage() {
                       value={formData.specialRequests}
                       onChange={(e) => setFormData({ ...formData, specialRequests: e.target.value })}
                       className="w-full min-h-[100px] px-4 py-3 border-2 border-green-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
-                      placeholder="Any special requirements or requests..."
+                      placeholder="Dietary preferences, celebrations/occasions, expected arrival time, transport or activity requests, or anything else we should know..."
                     />
                   </div>
 
-                  <Button 
-                    type="submit" 
-                    className="w-full bg-gradient-to-r from-green-600 to-yellow-600 hover:from-green-700 hover:to-yellow-700 text-white font-semibold shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-[1.02]" 
-                    size="lg" 
-                    disabled={!selectedRoom}
+                  <Button
+                    type="submit"
+                    className="w-full bg-gradient-to-r from-green-600 to-yellow-600 hover:from-green-700 hover:to-yellow-700 text-white font-semibold shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-[1.02]"
+                    size="lg"
+                    disabled={cart.length === 0}
                   >
                     <Sparkles className="w-5 h-5 mr-2" />
                     Submit Booking Request
@@ -440,11 +593,23 @@ export default function BookingPage() {
                 <CardTitle className="text-xl text-green-700">Booking Summary</CardTitle>
               </CardHeader>
               <CardContent className="space-y-6 pt-6">
-                {selectedRoom ? (
+                {cart.length > 0 ? (
                   <>
-                    <div className="p-4 bg-gradient-to-br from-green-50 to-yellow-50 rounded-xl border border-green-200">
-                      <p className="text-sm text-gray-600 mb-2">Selected Room</p>
-                      <p className="font-bold text-lg text-green-700">{selectedRoom.name}</p>
+                    <div className="p-4 bg-gradient-to-br from-green-50 to-yellow-50 rounded-xl border border-green-200 space-y-2">
+                      <p className="text-sm text-gray-600">Selected Rooms</p>
+                      {cart.map((line) => (
+                        <p key={line.key} className="font-bold text-green-700">
+                          {line.room.name} <span className="font-normal text-sm text-gray-600">({line.occupancy}{line.extraBed ? " + extra bed" : ""})</span>
+                        </p>
+                      ))}
+                    </div>
+                    <div className="p-3 bg-white rounded-lg border border-green-100 flex justify-between items-center">
+                      <p className="text-sm text-gray-600">Meal Plan</p>
+                      <p className="font-semibold text-green-700">{formData.bookingType}</p>
+                    </div>
+                    <div className="p-3 bg-white rounded-lg border border-green-100 flex justify-between items-center">
+                      <p className="text-sm text-gray-600">Total Guests</p>
+                      <p className="font-semibold text-green-700">{totalGuests()}</p>
                     </div>
                     {formData.checkin && formData.checkout && (
                       <>
@@ -467,13 +632,9 @@ export default function BookingPage() {
                           </div>
                         </div>
                         <div className="border-t-2 border-green-100 pt-4 space-y-3">
-                          <div className="flex justify-between items-center">
-                            <p className="text-sm text-gray-600">Room Rate</p>
-                            <p className="text-sm font-semibold">{currencySymbol(selectedRoom.currency)} {selectedRoom.price} × {calculateNights()}</p>
-                          </div>
                           <div className="flex justify-between items-center p-4 bg-gradient-to-r from-green-600 to-yellow-600 rounded-xl shadow-lg">
                             <p className="text-white font-bold text-lg">Total</p>
-                            <p className="text-white font-bold text-2xl">{currencySymbol(selectedRoom.currency)} {calculateTotal()}</p>
+                            <p className="text-white font-bold text-2xl">{currencySymbol(cartCurrency)} {calculateTotal()}</p>
                           </div>
                         </div>
                       </>
@@ -482,7 +643,7 @@ export default function BookingPage() {
                 ) : (
                   <div className="text-center py-12">
                     <Sparkles className="w-12 h-12 text-yellow-500 mx-auto mb-3 animate-pulse" />
-                    <p className="text-gray-500">Select a room to see pricing</p>
+                    <p className="text-gray-500">Add a room to see pricing</p>
                   </div>
                 )}
 

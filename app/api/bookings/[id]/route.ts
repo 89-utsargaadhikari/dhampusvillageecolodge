@@ -33,6 +33,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     }
     if (body.extraBed !== undefined) updateData.extraBed = Boolean(body.extraBed)
     if (body.groupId !== undefined) updateData.groupId = body.groupId || null
+    if (body.notes !== undefined) updateData.notes = body.notes || null
 
     const booking = await prisma.booking.update({
       where: { id },

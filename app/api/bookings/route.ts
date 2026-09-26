@@ -19,6 +19,7 @@ async function bookingPayload(body: any) {
     currency: normalizeCurrency(body.currency),
     extraBed: Boolean(body.extraBed),
     groupId: body.groupId || null,
+    notes: body.notes || null,
     status: body.status || 'Pending',
     bookingSource: body.bookingSource || 'phone',
     businessId: body.businessId ? parseInt(body.businessId) : null

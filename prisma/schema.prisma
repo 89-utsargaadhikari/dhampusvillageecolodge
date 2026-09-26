@@ -67,6 +67,7 @@ model Booking {
   currency      String?   @default("NPR")
   extraBed      Boolean   @default(false)
   groupId       String?
+  notes         String?   @db.Text // Guest special requests
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   

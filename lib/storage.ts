@@ -35,6 +35,7 @@ export interface Booking {
   currency?: string
   extraBed?: boolean
   groupId?: string | null
+  notes?: string | null
 }
 
 export interface GalleryItem {
