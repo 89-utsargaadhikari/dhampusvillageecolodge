@@ -6,8 +6,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_DATABASE_URL")
 }
 
@@ -16,21 +16,21 @@ datasource db {
 // ============================================
 
 model Room {
-  id          Int       @id @default(autoincrement())
-  name        String    @unique
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
   price       String
-  currency    String    @default("NPR") // NPR | USD | INR
+  currency    String   @default("NPR") // NPR | USD | INR
   description String
   capacity    Int
-  status      String    // "Available" | "Booked"
-  features    String    // JSON array stored as string
+  status      String // "Available" | "Booked"
+  features    String // JSON array stored as string
   rating      Float
-  image       String?   @db.Text // Base64 or URL
-  roomNumbers String?   // Comma-separated (legacy support)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  
-  inventory   RoomInventory[]
+  image       String?  @db.Text // Base64 or URL
+  roomNumbers String? // Comma-separated (legacy support)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  inventory RoomInventory[]
 }
 
 model RoomInventory {
@@ -42,37 +42,38 @@ model RoomInventory {
   notes      String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
-  
-  room       Room     @relation(fields: [roomTypeId], references: [id], onDelete: Cascade)
-  bookings   Booking[]
+
+  room     Room      @relation(fields: [roomTypeId], references: [id], onDelete: Cascade)
+  bookings Booking[]
 }
 
 model Booking {
-  id            Int       @id @default(autoincrement())
-  bookingId     String?   @unique // Unique booking reference (e.g., BK-2025-001)
-  guest         String
-  email         String?
-  phone         String?
-  room          String    // Room type name
-  roomNumber    String?
-  checkin       String    // Stored as string for now (will add BS conversion)
-  checkout      String
-  price         String
-  status        String    // "Pending" | "Confirmed" | "Cancelled" | "Checked Out"
-  bookingSource String?   // "website" | "phone" | "walkin" | "business" | "travel_agent" | "company"
-  businessId    Int?
+  id             Int      @id @default(autoincrement())
+  bookingId      String?  @unique // Unique booking reference (e.g., BK-2025-001)
+  guest          String
+  email          String?
+  phone          String?
+  room           String // Room type name
+  roomNumber     String?
+  checkin        String // Stored as string for now (will add BS conversion)
+  checkout       String
+  price          String
+  status         String // "Pending" | "Confirmed" | "Cancelled" | "Checked Out"
+  bookingSource  String? // "website" | "phone" | "walkin" | "business" | "travel_agent" | "company"
+  businessId     Int?
   numberOfGuests Int?     @default(1)
-  bookingType   String?   @default("EP") // EP | CP | BB | MAP | AP | AI
-  occupancy     String?   // SGL | DBL | TRPL
-  currency      String?   @default("NPR")
-  extraBed      Boolean   @default(false)
-  groupId       String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
-  roomInventory RoomInventory? @relation(fields: [roomNumber], references: [roomNumber])
-  restaurantOrders RestaurantOrder[]
-  business      Business? @relation(fields: [businessId], references: [id])
+  bookingType    String?  @default("EP") // EP | CP | BB | MAP | AP | AI
+  occupancy      String? // SGL | DBL | TRPL
+  currency       String?  @default("NPR")
+  extraBed       Boolean  @default(false)
+  groupId        String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  roomInventory        RoomInventory?        @relation(fields: [roomNumber], references: [roomNumber])
+  restaurantOrders     RestaurantOrder[]
+  business             Business?             @relation(fields: [businessId], references: [id])
+  billSplitAllocations BillSplitAllocation[]
 }
 
 // ============================================
@@ -80,41 +81,42 @@ model Booking {
 // ============================================
 
 model Business {
-  id             Int       @id @default(autoincrement())
-  name           String    @unique
-  contactPerson  String?
-  phone          String?
-  email          String?
-  address        String?
-  irdNumber      String?
-  creditLimit    Float     @default(0)
-  currentCredit  Float     @default(0)
-  active         Boolean   @default(true)
-  notes          String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id            Int      @id @default(autoincrement())
+  name          String   @unique
+  contactPerson String?
+  phone         String?
+  email         String?
+  address       String?
+  irdNumber     String?
+  creditLimit   Float    @default(0)
+  currentCredit Float    @default(0)
+  active        Boolean  @default(true)
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  bookings       Booking[]
-  creditAccounts CreditAccount[]
-  rateCards      BusinessRateCard[]
+  bookings         Booking[]
+  creditAccounts   CreditAccount[]
+  rateCards        BusinessRateCard[]
+  billSplits       BillSplit[]
   restaurantOrders RestaurantOrder[]
 }
 
 // Business Rate Cards - Fixed rates per business per room type per meal plan
 model BusinessRateCard {
-  id          Int      @id @default(autoincrement())
-  businessId  Int
-  roomType    String   // "Deluxe", "Standard", etc.
-  mealPlan    String   // EP | CP | BB | MAP | AP | AI
-  currency    String   @default("NPR")
-  sglRate     Float?   // Single occupancy rate
-  dblRate     Float?   // Double occupancy rate
-  trplRate    Float?   // Triple occupancy rate
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
-  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  
+  id         Int      @id @default(autoincrement())
+  businessId Int
+  roomType   String // "Deluxe", "Standard", etc.
+  mealPlan   String // EP | CP | BB | MAP | AP | AI
+  currency   String   @default("NPR")
+  sglRate    Float? // Single occupancy rate
+  dblRate    Float? // Double occupancy rate
+  trplRate   Float? // Triple occupancy rate
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
   @@unique([businessId, roomType, mealPlan, currency])
 }
 
@@ -126,7 +128,7 @@ model SiteSettings {
   id        Int      @id @default(autoincrement())
   logoImage String?  @db.Text
   siteName  String   @default("Dhampus Eco Lodge")
-  email     String?  // Exists in live DB; kept to avoid dropping data
+  email     String? // Exists in live DB; kept to avoid dropping data
   phone     String?
   whatsapp  String?
   createdAt DateTime @default(now())
@@ -145,7 +147,7 @@ model HeroSettings {
 
 model HeroMedia {
   id        Int      @id @default(autoincrement())
-  type      String   // "image" | "video"
+  type      String // "image" | "video"
   url       String   @db.Text // URL or base64 - using TEXT for large base64 strings
   order     Int      @default(0)
   createdAt DateTime @default(now())
@@ -167,46 +169,47 @@ model GalleryItem {
 // ============================================
 
 model RestaurantMenuItem {
-  id          Int       @id @default(autoincrement())
+  id          Int      @id @default(autoincrement())
   name        String
   description String?
   price       Float
-  category    String    // "food" | "drinks" | "bar" | "snacks"
-  image       String?   @db.Text
-  available   Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  
-  orderItems  OrderItem[]
+  category    String // "food" | "drinks" | "bar" | "snacks"
+  image       String?  @db.Text
+  available   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  orderItems    OrderItem[]
   inventoryItem InventoryItem?
 }
 
 model RestaurantOrder {
-  id            Int       @id @default(autoincrement())
-  orderNumber   String    @unique
-  orderDate     DateTime? @default(now())
-  bookingId     Int?      // Link to room booking (optional)
-  businessId    Int?      // Link to company/business partner (optional, for walk-in bills billed to a company)
-  roomNumber    String?   // For direct room service
-  guestName     String?
-  orderType     String?   @default("room_service") // "room_service" | "restaurant" | "bar"
-  status        String    @default("pending") // "pending" | "confirmed" | "completed" | "cancelled"
-  subtotal      Float
-  discountType  String?   // "percentage" | "amount"
-  discountValue Float?    @default(0)
-  discountAmount Float?   @default(0)
-  tax           Float     @default(0)
-  taxPercentage Float?    @default(13)
-  total         Float
-  paymentStatus String    @default("unpaid") // "unpaid" | "paid" | "credit"
-  paymentMethod String?   // "cash" | "card" | "qr" | "credit" | "room_bill"
-  notes         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
-  booking     Booking?  @relation(fields: [bookingId], references: [id], onDelete: SetNull)
-  business    Business? @relation(fields: [businessId], references: [id])
-  items       OrderItem[]
+  id             Int       @id @default(autoincrement())
+  orderNumber    String    @unique
+  orderDate      DateTime? @default(now())
+  bookingId      Int? // Link to room booking (optional)
+  businessId     Int? // Link to company/business partner (optional, for walk-in bills billed to a company)
+  roomNumber     String? // For direct room service
+  guestName      String?
+  orderType      String?   @default("room_service") // "room_service" | "restaurant" | "bar"
+  status         String    @default("pending") // "pending" | "confirmed" | "completed" | "cancelled"
+  subtotal       Float
+  discountType   String? // "percentage" | "amount"
+  discountValue  Float?    @default(0)
+  discountAmount Float?    @default(0)
+  tax            Float     @default(0)
+  taxPercentage  Float?    @default(13)
+  total          Float
+  paymentStatus  String    @default("unpaid") // "unpaid" | "paid" | "credit"
+  paymentMethod  String? // "cash" | "card" | "qr" | "credit" | "room_bill"
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  booking              Booking?              @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  business             Business?             @relation(fields: [businessId], references: [id])
+  items                OrderItem[]
+  billSplitAllocations BillSplitAllocation[]
 }
 
 model OrderItem {
@@ -218,9 +221,9 @@ model OrderItem {
   price      Float
   subtotal   Float
   createdAt  DateTime @default(now())
-  
-  order     RestaurantOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  menuItem  RestaurantMenuItem? @relation(fields: [menuItemId], references: [id], onDelete: SetNull)
+
+  order    RestaurantOrder     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem RestaurantMenuItem? @relation(fields: [menuItemId], references: [id], onDelete: SetNull)
 }
 
 // ============================================
@@ -228,51 +231,51 @@ model OrderItem {
 // ============================================
 
 model InventoryItem {
-  id                  Int       @id @default(autoincrement())
-  menuItemId          Int?      @unique // Link to menu item (optional)
-  name                String    @unique
-  category            String    // Required: "Fresh Produce" | "Dry Goods" | "Beverages" | etc.
-  unit                String    // Required: "kg" | "liters" | "pieces" | "bottles" | etc.
-  
+  id         Int    @id @default(autoincrement())
+  menuItemId Int?   @unique // Link to menu item (optional)
+  name       String @unique
+  category   String // Required: "Fresh Produce" | "Dry Goods" | "Beverages" | etc.
+  unit       String // Required: "kg" | "liters" | "pieces" | "bottles" | etc.
+
   // Stock Levels (3-tier system + store/bar split)
-  currentStock        Float     @default(0)
-  storeStock          Float     @default(0)
-  barStock            Float     @default(0)
-  goodStockLevel      Float     @default(50)    // Green zone minimum
-  lowStockLevel       Float     @default(20)    // Orange zone (warning)
-  criticalStockLevel  Float     @default(5)     // Red zone (critical)
-  
+  currentStock       Float @default(0)
+  storeStock         Float @default(0)
+  barStock           Float @default(0)
+  goodStockLevel     Float @default(50) // Green zone minimum
+  lowStockLevel      Float @default(20) // Orange zone (warning)
+  criticalStockLevel Float @default(5) // Red zone (critical)
+
   // Pricing
-  unitPrice           Float     @default(0)
-  
+  unitPrice Float @default(0)
+
   // Storage
-  storageLocation     String?   // Optional: "Main Pantry", "Cold Storage", etc.
-  
+  storageLocation String? // Optional: "Main Pantry", "Cold Storage", etc.
+
   // Expiry Tracking (Optional per item)
-  trackExpiry         Boolean   @default(false)
-  expiryDate          DateTime?
-  expiryAlertDays     Int?      @default(7)     // Alert X days before expiry
-  
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
-  
-  menuItem            RestaurantMenuItem? @relation(fields: [menuItemId], references: [id])
-  transactions        InventoryTransaction[]
+  trackExpiry     Boolean   @default(false)
+  expiryDate      DateTime?
+  expiryAlertDays Int?      @default(7) // Alert X days before expiry
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  menuItem     RestaurantMenuItem?    @relation(fields: [menuItemId], references: [id])
+  transactions InventoryTransaction[]
 }
 
 model InventoryTransaction {
-  id            Int       @id @default(autoincrement())
+  id              Int      @id @default(autoincrement())
   inventoryItemId Int
-  type          String    // "purchase" | "sale" | "adjustment" | "waste" | "transfer"
-  quantity      Float
-  unitPrice     Float?
-  totalCost     Float?
-  referenceType String?   // "order" | "manual" | "invoice"
-  referenceId   String?
-  notes         String?
-  performedBy   String?   // Admin name
-  createdAt     DateTime  @default(now())
-  
+  type            String // "purchase" | "sale" | "adjustment" | "waste" | "transfer"
+  quantity        Float
+  unitPrice       Float?
+  totalCost       Float?
+  referenceType   String? // "order" | "manual" | "invoice"
+  referenceId     String?
+  notes           String?
+  performedBy     String? // Admin name
+  createdAt       DateTime @default(now())
+
   inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
 }
 
@@ -281,27 +284,75 @@ model InventoryTransaction {
 // ============================================
 
 model AccountTransaction {
-  id              Int       @id @default(autoincrement())
-  date            String    // BS date string
-  dateAD          DateTime? // AD date for sorting
-  type            String    // "income" | "expense"
-  category        String    // "room_booking" | "restaurant" | "bar" | "salary" | "utilities" | "supplies" | "other"
-  description     String
-  amount          Float
-  currency        String    @default("NPR")
-  exchangeRate    Float?    @default(1)
-  amountNPR       Float?    @default(0) // Converted to NPR
-  paymentMethod   String?   // "cash" | "card" | "bank_transfer" | "credit"
-  partyName       String?   // Vendor/customer/party the transaction was with
-  invoiceNo       String?   // Invoice/bill number
-  referenceType   String?   // "booking" | "order" | "manual"
-  referenceId     Int?
-  taxAmount       Float?    @default(0)
-  taxPercentage   Float?    @default(0)
-  notes           String?
-  createdBy       String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id            Int       @id @default(autoincrement())
+  date          String // BS date string
+  dateAD        DateTime? // AD date for sorting
+  type          String // "income" | "expense"
+  category      String // "room_booking" | "restaurant" | "bar" | "salary" | "utilities" | "supplies" | "other"
+  description   String
+  amount        Float
+  currency      String    @default("NPR")
+  exchangeRate  Float?    @default(1)
+  amountNPR     Float?    @default(0) // Converted to NPR
+  paymentMethod String? // "cash" | "card" | "bank_transfer" | "credit"
+  partyName     String? // Vendor/customer/party the transaction was with
+  invoiceNo     String? // Invoice/bill number
+  referenceType String? // "booking" | "order" | "manual"
+  referenceId   Int?
+  taxAmount     Float?    @default(0)
+  taxPercentage Float?    @default(0)
+  notes         String?
+  createdBy     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+// ============================================
+// BILL SPLITTING
+// ============================================
+
+// A single split-off bill within a booking group (or a solo booking split among guests).
+// Charges (room nights, restaurant orders) are allocated to one or more BillSplit rows
+// via BillSplitAllocation, each getting its own payer, discount/VAT and payment status.
+model BillSplit {
+  id            Int       @id @default(autoincrement())
+  groupKey      String // booking.groupId for a multi-room group, or "solo-<bookingId>" for a single room split among guests
+  label         String
+  payerName     String?
+  payerEmail    String?
+  payerPhone    String?
+  businessId    Int?
+  discountType  String?   @default("amount") // "percentage" | "amount"
+  discountValue Float?    @default(0)
+  vatPercent    Float?    @default(13)
+  paymentStatus String    @default("unpaid") // "unpaid" | "paid" | "credit"
+  paymentMethod String?
+  status        String    @default("open") // "open" | "checked_out"
+  checkedOutAt  DateTime?
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  business    Business?             @relation(fields: [businessId], references: [id])
+  allocations BillSplitAllocation[]
+}
+
+// One portion of a charge (a room's stay, or a restaurant order) assigned to a BillSplit.
+// A single source (bookingId or orderId) can have multiple allocations across different
+// split bills, as long as their amounts don't exceed that source's inclusive total.
+model BillSplitAllocation {
+  id          Int      @id @default(autoincrement())
+  billSplitId Int
+  sourceType  String // "room" | "order"
+  bookingId   Int? // set when sourceType = "room"
+  orderId     Int? // set when sourceType = "order"
+  description String?
+  amount      Float
+  createdAt   DateTime @default(now())
+
+  billSplit BillSplit        @relation(fields: [billSplitId], references: [id], onDelete: Cascade)
+  booking   Booking?         @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  order     RestaurantOrder? @relation(fields: [orderId], references: [id], onDelete: SetNull)
 }
 
 // ============================================
@@ -314,32 +365,32 @@ model CreditAccount {
   guestEmail         String?
   guestPhone         String
   guestAddress       String?
-  creditAmount       Float     // Total credit given
+  creditAmount       Float // Total credit given
   paidAmount         Float     @default(0)
-  outstandingBalance Float     // Remaining balance
-  creditDate         DateTime  // When credit was given
-  dueDate            DateTime  // Payment due date
+  outstandingBalance Float // Remaining balance
+  creditDate         DateTime // When credit was given
+  dueDate            DateTime // Payment due date
   status             String    @default("unpaid") // "paid" | "partial" | "unpaid" | "overdue"
-  bookingId          Int?      // Optional link to booking
-  businessId         Int?      // Optional link to business
+  bookingId          Int? // Optional link to booking
+  businessId         Int? // Optional link to business
   notes              String?
   lastReminderSent   DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
-  
+
   payments CreditPayment[]
-  business Business? @relation(fields: [businessId], references: [id])
+  business Business?       @relation(fields: [businessId], references: [id])
 }
 
 model CreditPayment {
-  id               Int       @id @default(autoincrement())
-  creditAccountId  Int
-  amount           Float
-  paymentDate      DateTime  @default(now())
-  paymentMethod    String    // "cash" | "card" | "bank_transfer"
-  description      String?
-  createdAt        DateTime  @default(now())
-  
+  id              Int      @id @default(autoincrement())
+  creditAccountId Int
+  amount          Float
+  paymentDate     DateTime @default(now())
+  paymentMethod   String // "cash" | "card" | "bank_transfer"
+  description     String?
+  createdAt       DateTime @default(now())
+
   creditAccount CreditAccount @relation(fields: [creditAccountId], references: [id], onDelete: Cascade)
 }
 
@@ -350,7 +401,7 @@ model CreditPayment {
 model User {
   id        Int      @id @default(autoincrement())
   username  String   @unique
-  password  String   // Will be hashed
+  password  String // Will be hashed
   role      String   @default("admin") // "admin" | "staff" (for future)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -364,88 +415,88 @@ model User {
 model Staff {
   id        Int      @id @default(autoincrement())
   name      String   @unique
-  role      String?  // "Manager", "Waiter", "Receptionist", etc.
+  role      String? // "Manager", "Waiter", "Receptionist", etc.
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
-  sales     Sale[]
+
+  sales Sale[]
 }
 
 // Vendor/Supplier for purchase tracking
 model Vendor {
-  id            Int       @id @default(autoincrement())
-  name          String    @unique
+  id            Int      @id @default(autoincrement())
+  name          String   @unique
   contactPerson String?
   phone         String?
   email         String?
   address       String?
-  irdNumber     String?   // IRD / PAN / VAT number
-  active        Boolean   @default(true)
+  irdNumber     String? // IRD / PAN / VAT number
+  active        Boolean  @default(true)
   notes         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
-  purchases     Purchase[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  purchases Purchase[]
 }
 
 // Purchase tracking
 model Purchase {
-  id            Int       @id @default(autoincrement())
-  invoiceNo     String    @unique
-  vendorId      Int
-  vendorName    String    // Denormalized for easy access
-  purchaseDate  DateTime  @default(now())
-  month         String    // e.g., "Bhadra", "Ashwin" (Nepali month)
-  dateBS        String?   // Bikram Sambat date
-  
+  id           Int      @id @default(autoincrement())
+  invoiceNo    String   @unique
+  vendorId     Int
+  vendorName   String // Denormalized for easy access
+  purchaseDate DateTime @default(now())
+  month        String // e.g., "Bhadra", "Ashwin" (Nepali month)
+  dateBS       String? // Bikram Sambat date
+
   // Amounts
-  subtotal      Float
-  vatAmount     Float     @default(0)
-  vatPercent    Float     @default(13)
-  nonVatAmount  Float     @default(0)
-  total         Float
-  
-  paymentMode   String    @default("CREDIT") // "CASH" | "CREDIT" | "CARD" | "BANK"
-  paymentStatus String    @default("unpaid") // "paid" | "unpaid" | "partial"
-  paidAmount    Float     @default(0)
-  
-  category      String?   // "Food", "Beverages", "Supplies", etc.
-  description   String?
-  notes         String?
-  
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
-  vendor        Vendor    @relation(fields: [vendorId], references: [id])
+  subtotal     Float
+  vatAmount    Float @default(0)
+  vatPercent   Float @default(13)
+  nonVatAmount Float @default(0)
+  total        Float
+
+  paymentMode   String @default("CREDIT") // "CASH" | "CREDIT" | "CARD" | "BANK"
+  paymentStatus String @default("unpaid") // "paid" | "unpaid" | "partial"
+  paidAmount    Float  @default(0)
+
+  category    String? // "Food", "Beverages", "Supplies", etc.
+  description String?
+  notes       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vendor Vendor @relation(fields: [vendorId], references: [id])
 }
 
 // Sales tracking (separate from bookings and restaurant orders)
 model Sale {
-  id            Int       @id @default(autoincrement())
-  saleDate      DateTime  @default(now())
-  month         String    // e.g., "Bhadra", "Ashwin" (Nepali month)
-  dateBS        String?   // Bikram Sambat date
-  
-  staffId       Int
-  staffName     String    // Denormalized for easy access
-  
+  id       Int      @id @default(autoincrement())
+  saleDate DateTime @default(now())
+  month    String // e.g., "Bhadra", "Ashwin" (Nepali month)
+  dateBS   String? // Bikram Sambat date
+
+  staffId   Int
+  staffName String // Denormalized for easy access
+
   // Amounts
-  subtotal      Float
-  vatAmount     Float     @default(0)
-  vatPercent    Float     @default(13)
-  nonVatAmount  Float     @default(0)
-  total         Float
-  
-  paymentMode   String    @default("CASH") // "CASH" | "CREDIT" | "CARD" | "QR"
-  category      String?   // "Room", "Food", "Beverage", "Other"
-  description   String?
-  
-  invoiceNo     String?   @unique
-  customerName  String?
-  
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
-  staff         Staff     @relation(fields: [staffId], references: [id])
+  subtotal     Float
+  vatAmount    Float @default(0)
+  vatPercent   Float @default(13)
+  nonVatAmount Float @default(0)
+  total        Float
+
+  paymentMode String  @default("CASH") // "CASH" | "CREDIT" | "CARD" | "QR"
+  category    String? // "Room", "Food", "Beverage", "Other"
+  description String?
+
+  invoiceNo    String? @unique
+  customerName String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  staff Staff @relation(fields: [staffId], references: [id])
 }
