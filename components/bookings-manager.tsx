@@ -34,6 +34,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { AdminSearch, matchesSearch } from "@/components/admin-search"
+import { PartnerCombobox } from "@/components/partner-combobox"
 import { AdminLoading, useAdminLoader } from "@/components/admin-loading"
 import { Spinner } from "@/components/ui/spinner"
 
@@ -193,7 +194,6 @@ export default function BookingsManager() {
   const [businesses, setBusinesses] = useState<any[]>([])
   const [statusFilter, setStatusFilter] = useState("all")
   const [searchQuery, setSearchQuery] = useState("")
-  const [partnerSearch, setPartnerSearch] = useState("")
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set())
   const [partnerRates, setPartnerRates] = useState<RateCardRow[]>([])
   const applyPartnerRatesRef = useRef(false)
@@ -998,29 +998,16 @@ export default function BookingsManager() {
               </div>
               {partnerBooking && (
                 <div className="space-y-2">
-                  <Label>Company / Agent</Label>
-                  <AdminSearch
-                    value={partnerSearch}
-                    onChange={setPartnerSearch}
-                    placeholder="Search partners..."
-                    className="mb-2"
-                  />
-                  <Select
+                  <Label>Business Partner</Label>
+                  <PartnerCombobox
+                    partners={businesses}
                     value={formData.businessId}
-                    onValueChange={(value) => {
+                    onChange={(value) => {
                       applyPartnerRatesRef.current = true
                       setFormData((prev) => ({ ...prev, businessId: value, selectedRateCardKey: "" }))
                     }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select from business partners" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {businesses.filter((business: any) => matchesSearch(partnerSearch, business.name, business.phone, business.contactPerson)).map((business) => (
-                        <SelectItem key={business.id} value={String(business.id)}>{business.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Select from business partners"
+                  />
                 </div>
               )}
             </div>
@@ -1089,10 +1076,11 @@ export default function BookingsManager() {
                   <Label htmlFor="roomCount">No. of rooms</Label>
                   <Input
                     id="roomCount"
-                    type="number"
-                    min="1"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     value={formData.rooms.length}
-                    onChange={(e) => setRoomCount(e.target.value)}
+                    onChange={(e) => setRoomCount(e.target.value.replace(/[^0-9]/g, ""))}
                   />
                   <p className="text-xs text-gray-500">Room numbers are assigned at check-in.</p>
                 </div>

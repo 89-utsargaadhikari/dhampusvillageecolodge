@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { Plus, Building2, Users, X } from "lucide-react"
 import { AdminSearch, matchesSearch } from "@/components/admin-search"
+import { PartnerCombobox } from "@/components/partner-combobox"
 import { fetchBusinesses, fetchBookings, createBooking, fetchRooms, fetchRoomInventory, fetchBusinessRates } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -34,7 +35,6 @@ export default function BusinessBookings() {
   const [rooms, setRooms] = useState<any[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
-  const [partnerSearch, setPartnerSearch] = useState("")
   const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null)
   const [availableRoomNumbers, setAvailableRoomNumbers] = useState<{ [key: number]: string[] }>({})
   const [partnerRates, setPartnerRates] = useState<RateCardRow[]>([])
@@ -397,24 +397,12 @@ export default function BusinessBookings() {
             {/* Business Selection */}
             <div>
               <Label htmlFor="businessId">Business Partner *</Label>
-              <AdminSearch
-                value={partnerSearch}
-                onChange={setPartnerSearch}
-                placeholder="Search partners..."
-                className="mb-2"
+              <PartnerCombobox
+                partners={businesses}
+                value={formData.businessId}
+                onChange={handleBusinessSelect}
+                placeholder="Select business"
               />
-              <Select value={formData.businessId} onValueChange={handleBusinessSelect} required>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select business" />
-                </SelectTrigger>
-                <SelectContent>
-                  {businesses.filter((business) => matchesSearch(partnerSearch, business.name)).map((business) => (
-                    <SelectItem key={business.id} value={business.id.toString()}>
-                      {business.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
 
             {selectedBusiness && (

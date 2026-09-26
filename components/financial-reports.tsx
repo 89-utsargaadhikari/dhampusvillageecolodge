@@ -1,251 +1,218 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Plus, Download, TrendingUp, ShoppingCart, DollarSign, Users, Calendar } from "lucide-react"
+import { useEffect, useState } from "react"
+import { Download, ShoppingCart, DollarSign } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AdminSearch, matchesSearch } from "@/components/admin-search"
-import { AdminLoading, useAdminLoader } from "@/components/admin-loading"
-import { 
-  fetchPurchases, 
-  fetchSales, 
-  fetchVendors, 
-  fetchStaff,
-  createPurchase,
-  createSale,
-  createVendor,
-  createStaff
-} from "@/lib/api"
-
-interface Purchase {
-  id: number
-  invoiceNo: string
-  vendorName: string
-  purchaseDate: string
-  month: string
-  subtotal: number
-  vatAmount: number
-  nonVatAmount: number
-  total: number
-  paymentMode: string
-  paymentStatus: string
-}
-
-interface Sale {
-  id: number
-  staffName: string
-  saleDate: string
-  month: string
-  subtotal: number
-  vatAmount: number
-  total: number
-  paymentMode: string
-  category?: string
-}
+import { AdminLoading, AdminRefreshHint, useAdminLoader } from "@/components/admin-loading"
+import { adToBs, bsMonthIndex, nepaliMonths } from "@/lib/nepali-date"
+import { fetchAccountTransactions, fetchVendors } from "@/lib/api"
 
 interface Vendor {
   id: number
   name: string
-  phone?: string
 }
 
-interface Staff {
+interface Transaction {
   id: number
-  name: string
-  role?: string
+  date: string
+  type: "income" | "expense"
+  category: string
+  description: string
+  amount: number
+  currency: string
+  paymentMethod: string
+  partyName?: string | null
+  invoiceNo?: string | null
+  taxPercentage?: number | null
+  taxAmount?: number | null
 }
 
-const nepaliMonths = ["Baishakh", "Jestha", "Ashadh", "Shrawan", "Bhadra", "Ashwin", "Kartik", "Mangsir", "Poush", "Magh", "Falgun", "Chaitra"]
+const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
 
+const CATEGORY_LABELS: Record<string, string> = {
+  room_booking: "Room Booking",
+  restaurant: "Restaurant",
+  bar: "Bar",
+  salary: "Salary",
+  utilities: "Utilities",
+  supplies: "Supplies",
+  other: "Other",
+}
+
+// Sales Report = income transactions, Purchase Report = expense transactions (both sourced from AMS)
 export default function FinancialReports() {
   const [activeTab, setActiveTab] = useState<"purchases" | "sales">("purchases")
-  const [purchases, setPurchases] = useState<Purchase[]>([])
-  const [sales, setSales] = useState<Sale[]>([])
+  const [transactions, setTransactions] = useState<Transaction[]>([])
   const [vendors, setVendors] = useState<Vendor[]>([])
-  const [staff, setStaff] = useState<Staff[]>([])
   const [selectedMonth, setSelectedMonth] = useState("all")
+  const [selectedNepaliMonth, setSelectedNepaliMonth] = useState("all")
+  const [selectedYear, setSelectedYear] = useState("all")
+  const [selectedVendor, setSelectedVendor] = useState("all")
   const [searchQuery, setSearchQuery] = useState("")
-  const [isPurchaseDialogOpen, setIsPurchaseDialogOpen] = useState(false)
-  const [isSaleDialogOpen, setIsSaleDialogOpen] = useState(false)
-  const [isVendorDialogOpen, setIsVendorDialogOpen] = useState(false)
-  const [isStaffDialogOpen, setIsStaffDialogOpen] = useState(false)
-  const { loading, run } = useAdminLoader()
+  const { loading, refreshing, run } = useAdminLoader()
 
   useEffect(() => {
     loadData()
   }, [])
 
-  const loadData = async () => {
+  async function loadData() {
     try {
       await run(async () => {
-        const [purchasesData, salesData, vendorsData, staffData] = await Promise.all([
-          fetchPurchases(),
-          fetchSales(),
-          fetchVendors(),
-          fetchStaff()
-        ])
-        setPurchases(purchasesData)
-        setSales(salesData)
-        setVendors(vendorsData)
-        setStaff(staffData)
+        const [txnData, vendorData] = await Promise.all([fetchAccountTransactions(), fetchVendors()])
+        setTransactions(txnData)
+        setVendors(vendorData)
       })
     } catch (error) {
-      console.error('Failed to load data:', error)
+      console.error("Failed to load transactions:", error)
     }
   }
 
-  // Filter purchases by month
-  const filteredPurchases = selectedMonth && selectedMonth !== "all"
-    ? purchases.filter(p => p.month === selectedMonth)
-    : purchases
+  const txnType: "income" | "expense" = activeTab === "sales" ? "income" : "expense"
 
-  // Filter sales by month
-  const filteredSales = selectedMonth && selectedMonth !== "all"
-    ? sales.filter(s => s.month === selectedMonth)
-    : sales
+  const availableYears = Array.from(
+    new Set(transactions.map((t) => new Date(t.date).getFullYear()).filter((y) => !Number.isNaN(y)))
+  ).sort((a, b) => b - a)
+  if (availableYears.length === 0) availableYears.push(new Date().getFullYear())
 
-  const visiblePurchases = filteredPurchases.filter((p) =>
-    matchesSearch(searchQuery, p.invoiceNo, p.vendorName, p.paymentMode, p.paymentStatus)
-  )
-  const visibleSales = filteredSales.filter((s) =>
-    matchesSearch(searchQuery, s.staffName, s.paymentMode, s.category)
-  )
+  // Filter by tab type, then by month/year, then by search
+  const byType = transactions.filter((t) => t.type === txnType)
 
-  // Purchase statistics by vendor
-  const purchasesByVendor = filteredPurchases.reduce((acc, p) => {
-    if (!acc[p.vendorName]) {
-      acc[p.vendorName] = {
-        vendorName: p.vendorName,
-        totalPurchase: 0,
-        totalVAT: 0,
-        nonVatPurchase: 0,
-        totalSales: 0
-      }
-    }
-    acc[p.vendorName].totalPurchase += p.subtotal
-    acc[p.vendorName].totalVAT += p.vatAmount
-    acc[p.vendorName].nonVatPurchase += p.nonVatAmount
-    acc[p.vendorName].totalSales += p.total
+  const byPeriod = byType.filter((t) => {
+    const d = new Date(t.date)
+    const monthOk = selectedMonth === "all" || d.getMonth() === parseInt(selectedMonth)
+    const nepaliMonthOk = selectedNepaliMonth === "all" || bsMonthIndex(d) === parseInt(selectedNepaliMonth)
+    const yearOk = selectedYear === "all" || d.getFullYear() === parseInt(selectedYear)
+    const vendorOk = activeTab !== "purchases" || selectedVendor === "all" || t.partyName === selectedVendor
+    return monthOk && nepaliMonthOk && yearOk && vendorOk
+  })
+
+  const visible = byPeriod
+    .filter((t) => matchesSearch(searchQuery, t.description, t.category, t.partyName, t.invoiceNo, t.paymentMethod))
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+
+  // Summary grouping: sales by category, purchases by vendor/party
+  const groupKey = (t: Transaction) =>
+    activeTab === "sales" ? CATEGORY_LABELS[t.category] || t.category : t.partyName || "Unspecified"
+
+  const summary = byPeriod.reduce((acc, t) => {
+    const key = groupKey(t)
+    if (!acc[key]) acc[key] = { name: key, subtotal: 0, vat: 0, total: 0 }
+    acc[key].subtotal += t.amount
+    acc[key].vat += t.taxAmount || 0
+    acc[key].total += t.amount + (t.taxAmount || 0)
     return acc
-  }, {} as Record<string, any>)
+  }, {} as Record<string, { name: string; subtotal: number; vat: number; total: number }>)
 
-  // Sales statistics by staff
-  const salesByStaff = filteredSales.reduce((acc, s) => {
-    if (!acc[s.staffName]) {
-      acc[s.staffName] = {
-        staffName: s.staffName,
-        totalSales: 0,
-        totalVAT: 0,
-        totalWithVAT: 0
-      }
-    }
-    acc[s.staffName].totalSales += s.subtotal
-    acc[s.staffName].totalVAT += s.vatAmount
-    acc[s.staffName].totalWithVAT += s.total
-    return acc
-  }, {} as Record<string, any>)
+  const totalAmount = byPeriod.reduce((sum, t) => sum + t.amount, 0)
+  const totalVAT = byPeriod.reduce((sum, t) => sum + (t.taxAmount || 0), 0)
+  const totalNonVat = byPeriod.filter((t) => !t.taxPercentage).reduce((sum, t) => sum + t.amount, 0)
+  const totalWithVAT = totalAmount + totalVAT
 
-  // Calculate totals
-  const totalPurchaseAmount = filteredPurchases.reduce((sum, p) => sum + p.subtotal, 0)
-  const totalPurchaseVAT = filteredPurchases.reduce((sum, p) => sum + p.vatAmount, 0)
-  const totalNonVatPurchase = filteredPurchases.reduce((sum, p) => sum + p.nonVatAmount, 0)
-  const totalPurchaseWithVAT = filteredPurchases.reduce((sum, p) => sum + p.total, 0)
-
-  const totalSalesAmount = filteredSales.reduce((sum, s) => sum + s.subtotal, 0)
-  const totalSalesVAT = filteredSales.reduce((sum, s) => sum + s.vatAmount, 0)
-  const totalSalesWithVAT = filteredSales.reduce((sum, s) => sum + s.total, 0)
-
-  const handleAddPurchase = async (data: any) => {
-    try {
-      await createPurchase(data)
-      await loadData()
-      setIsPurchaseDialogOpen(false)
-    } catch (error) {
-      console.error('Failed to add purchase:', error)
-      alert('Failed to add purchase')
-    }
-  }
-
-  const handleAddSale = async (data: any) => {
-    try {
-      await createSale(data)
-      await loadData()
-      setIsSaleDialogOpen(false)
-    } catch (error) {
-      console.error('Failed to add sale:', error)
-      alert('Failed to add sale')
-    }
-  }
-
-  const handleAddVendor = async (data: any) => {
-    try {
-      await createVendor(data)
-      await loadData()
-      setIsVendorDialogOpen(false)
-    } catch (error) {
-      console.error('Failed to add vendor:', error)
-      alert('Failed to add vendor')
-    }
-  }
-
-  const handleAddStaff = async (data: any) => {
-    try {
-      await createStaff(data)
-      await loadData()
-      setIsStaffDialogOpen(false)
-    } catch (error) {
-      console.error('Failed to add staff:', error)
-      alert('Failed to add staff')
-    }
-  }
-
-  const exportToCSV = (data: any[], filename: string) => {
-    const headers = Object.keys(data[0] || {})
-    const csvContent = [
-      headers.join(","),
-      ...data.map(row => headers.map(h => row[h]).join(","))
-    ].join("\n")
-
+  const exportToCSV = () => {
+    const rows = visible.map((t, idx) => ({
+      "S.N.": idx + 1,
+      Date: new Date(t.date).toLocaleDateString(),
+      "Nepali Date": adToBs(t.date),
+      [activeTab === "sales" ? "Category" : "Vendor/Party"]: activeTab === "sales" ? (CATEGORY_LABELS[t.category] || t.category) : (t.partyName || "Unspecified"),
+      "Invoice No": t.invoiceNo || "",
+      Description: t.description,
+      "Payment Method": t.paymentMethod,
+      Amount: t.amount,
+      VAT: t.taxAmount || 0,
+      Total: t.amount + (t.taxAmount || 0),
+    }))
+    if (rows.length === 0) return
+    const headers = Object.keys(rows[0])
+    const csvContent = [headers.join(","), ...rows.map((row) => headers.map((h) => (row as any)[h]).join(","))].join("\n")
     const blob = new Blob([csvContent], { type: "text/csv" })
     const url = URL.createObjectURL(blob)
     const link = document.createElement("a")
     link.href = url
-    link.download = `${filename}.csv`
+    const monthLabel = selectedMonth !== "all"
+      ? months[parseInt(selectedMonth)]
+      : selectedNepaliMonth !== "all"
+        ? nepaliMonths[parseInt(selectedNepaliMonth)]
+        : "all-months"
+    link.download = `${activeTab}_${selectedYear === "all" ? "all-years" : selectedYear}_${monthLabel}.csv`
     link.click()
   }
 
   if (loading) return <AdminLoading label="Loading financial reports..." />
 
+  const reportTitle = activeTab === "sales" ? "Sales Report" : "Purchase Report"
+  const summaryTitle = activeTab === "sales" ? "Sales Summary by Category" : "Purchase Summary by Vendor"
+  const groupColumnLabel = activeTab === "sales" ? "Category" : "Vendor Name"
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-        <h2 className="text-xl sm:text-2xl font-bold">Financial Reports</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-xl sm:text-2xl font-bold">Financial Reports</h2>
+          <AdminRefreshHint show={refreshing} />
+        </div>
         <div className="flex flex-wrap gap-2 w-full sm:w-auto">
           <AdminSearch
             value={searchQuery}
             onChange={setSearchQuery}
-            placeholder="Search vendor, invoice, staff..."
+            placeholder="Search description, category, vendor..."
             className="sm:w-64"
           />
-          <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-            <SelectTrigger className="w-full sm:w-48">
-              <SelectValue placeholder="All Months" />
+          <Select
+            value={selectedMonth}
+            onValueChange={(v) => {
+              setSelectedMonth(v)
+              if (v !== "all") setSelectedNepaliMonth("all")
+            }}
+          >
+            <SelectTrigger className="w-full sm:w-40">
+              <SelectValue placeholder="All Months (AD)" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Months</SelectItem>
-              {nepaliMonths.map(month => (
-                <SelectItem key={month} value={month}>{month}</SelectItem>
+              <SelectItem value="all">All Months (AD)</SelectItem>
+              {months.map((month, idx) => (
+                <SelectItem key={month} value={idx.toString()}>{month}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={selectedNepaliMonth}
+            onValueChange={(v) => {
+              setSelectedNepaliMonth(v)
+              if (v !== "all") setSelectedMonth("all")
+            }}
+          >
+            <SelectTrigger className="w-full sm:w-40">
+              <SelectValue placeholder="All Months (BS)" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Months (BS)</SelectItem>
+              {nepaliMonths.map((month, idx) => (
+                <SelectItem key={month} value={idx.toString()}>{month}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={selectedYear} onValueChange={setSelectedYear}>
+            <SelectTrigger className="w-full sm:w-32">
+              <SelectValue placeholder="All Years" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Years</SelectItem>
+              {availableYears.map((year) => (
+                <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
       </div>
+
+      <p className="text-sm text-muted-foreground">
+        Live reports pulled from the Account Management System (AMS). Add or edit entries from AMS &rarr; Transactions.
+      </p>
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
         <TabsList className="grid w-full grid-cols-2 max-w-md">
@@ -259,31 +226,37 @@ export default function FinancialReports() {
           </TabsTrigger>
         </TabsList>
 
-        {/* PURCHASES TAB */}
-        <TabsContent value="purchases" className="space-y-6 mt-6">
-          <div className="flex gap-2 justify-end">
-            <Button variant="outline" onClick={() => setIsVendorDialogOpen(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              Add Vendor
-            </Button>
-            <Button onClick={() => setIsPurchaseDialogOpen(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              Add Purchase
-            </Button>
-            <Button variant="outline" onClick={() => exportToCSV(Object.values(purchasesByVendor), `purchases_${selectedMonth === "all" ? "all" : selectedMonth}`)}>
+        <TabsContent value={activeTab} className="space-y-6 mt-6">
+          <div className="flex flex-wrap gap-2 justify-between items-center">
+            {activeTab === "purchases" ? (
+              <Select value={selectedVendor} onValueChange={setSelectedVendor}>
+                <SelectTrigger className="w-full sm:w-56">
+                  <SelectValue placeholder="All Vendors" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Vendors</SelectItem>
+                  {vendors.map((v) => (
+                    <SelectItem key={v.id} value={v.name}>{v.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : <span />}
+            <Button variant="outline" onClick={exportToCSV}>
               <Download className="w-4 h-4 mr-2" />
               Export
             </Button>
           </div>
 
-          {/* Purchase Summary Stats */}
+          {/* Summary Stats */}
           <div className="grid md:grid-cols-4 gap-4">
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-gray-600">Total Purchase</CardTitle>
+                <CardTitle className="text-sm font-medium text-gray-600">
+                  {activeTab === "sales" ? "Total Sales" : "Total Purchase"}
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-2xl font-bold">NPR {totalPurchaseAmount.toLocaleString()}</p>
+                <p className="text-2xl font-bold">NPR {totalAmount.toLocaleString()}</p>
               </CardContent>
             </Card>
             <Card>
@@ -291,60 +264,64 @@ export default function FinancialReports() {
                 <CardTitle className="text-sm font-medium text-gray-600">VAT</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-2xl font-bold text-orange-600">NPR {totalPurchaseVAT.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-orange-600">NPR {totalVAT.toLocaleString()}</p>
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-gray-600">Non-VAT Purchase</CardTitle>
+                <CardTitle className="text-sm font-medium text-gray-600">
+                  Non-VAT {activeTab === "sales" ? "Sales" : "Purchase"}
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-2xl font-bold text-blue-600">NPR {totalNonVatPurchase.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-blue-600">NPR {totalNonVat.toLocaleString()}</p>
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-gray-600">Total Sales</CardTitle>
+                <CardTitle className="text-sm font-medium text-gray-600">Total (with VAT)</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-2xl font-bold text-green-600">NPR {totalPurchaseWithVAT.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-green-600">NPR {totalWithVAT.toLocaleString()}</p>
               </CardContent>
             </Card>
           </div>
 
-          {/* Purchase by Vendor Summary */}
+          {/* Summary by Category/Vendor */}
           <Card>
             <CardHeader>
-              <CardTitle>Purchase Summary by Vendor</CardTitle>
+              <CardTitle>{summaryTitle}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-green-700 text-white">
                     <tr>
-                      <th className="px-4 py-3 text-left">Vendor Name</th>
-                      <th className="px-4 py-3 text-right">Purchase</th>
+                      <th className="px-4 py-3 text-left">{groupColumnLabel}</th>
+                      <th className="px-4 py-3 text-right">Amount</th>
                       <th className="px-4 py-3 text-right">VAT</th>
-                      <th className="px-4 py-3 text-right">Non VAT Purchase</th>
-                      <th className="px-4 py-3 text-right">Total Sales</th>
+                      <th className="px-4 py-3 text-right">Total</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {Object.values(purchasesByVendor).map((vendor: any, idx) => (
-                      <tr key={idx} className={idx % 2 === 0 ? "bg-cyan-200" : "bg-white"}>
-                        <td className="px-4 py-3">{vendor.vendorName}</td>
-                        <td className="px-4 py-3 text-right font-semibold">{vendor.totalPurchase.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right">{vendor.totalVAT.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right">{vendor.nonVatPurchase.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right font-bold bg-orange-300">{vendor.totalSales.toLocaleString()}</td>
+                    {Object.values(summary).map((row, idx) => (
+                      <tr key={row.name} className={idx % 2 === 0 ? "bg-cyan-200" : "bg-white"}>
+                        <td className="px-4 py-3">{row.name}</td>
+                        <td className="px-4 py-3 text-right font-semibold">{row.subtotal.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right">{row.vat.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right font-bold bg-orange-300">{row.total.toLocaleString()}</td>
                       </tr>
                     ))}
+                    {Object.keys(summary).length === 0 && (
+                      <tr>
+                        <td colSpan={4} className="px-4 py-6 text-center text-gray-500">No {activeTab} recorded for this period.</td>
+                      </tr>
+                    )}
                     <tr className="bg-gray-200 font-bold">
                       <td className="px-4 py-3">TOTAL</td>
-                      <td className="px-4 py-3 text-right">{totalPurchaseAmount.toLocaleString()}</td>
-                      <td className="px-4 py-3 text-right">{totalPurchaseVAT.toLocaleString()}</td>
-                      <td className="px-4 py-3 text-right">{totalNonVatPurchase.toLocaleString()}</td>
-                      <td className="px-4 py-3 text-right bg-orange-300">{totalPurchaseWithVAT.toLocaleString()}</td>
+                      <td className="px-4 py-3 text-right">{totalAmount.toLocaleString()}</td>
+                      <td className="px-4 py-3 text-right">{totalVAT.toLocaleString()}</td>
+                      <td className="px-4 py-3 text-right bg-orange-300">{totalWithVAT.toLocaleString()}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -352,10 +329,10 @@ export default function FinancialReports() {
             </CardContent>
           </Card>
 
-          {/* Detailed Purchase Transactions */}
+          {/* Detailed Transactions */}
           <Card>
             <CardHeader>
-              <CardTitle>Purchase Transactions ({visiblePurchases.length})</CardTitle>
+              <CardTitle>{reportTitle} &mdash; Transactions ({visible.length})</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
@@ -363,156 +340,43 @@ export default function FinancialReports() {
                   <thead className="bg-gray-50 border-b">
                     <tr>
                       <th className="px-4 py-3 text-left">S.N.</th>
-                      <th className="px-4 py-3 text-left">Month</th>
                       <th className="px-4 py-3 text-left">Date</th>
-                      <th className="px-4 py-3 text-left">Inv No.</th>
-                      <th className="px-4 py-3 text-left">Vendor</th>
+                      <th className="px-4 py-3 text-left">{groupColumnLabel}</th>
+                      <th className="px-4 py-3 text-left">Description</th>
                       <th className="px-4 py-3 text-left">Payment Mode</th>
-                      <th className="px-4 py-3 text-right">Sale</th>
+                      <th className="px-4 py-3 text-right">Amount</th>
                       <th className="px-4 py-3 text-right">VAT</th>
                       <th className="px-4 py-3 text-right">Total</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {visiblePurchases.map((purchase, idx) => (
-                      <tr key={purchase.id} className="border-b hover:bg-gray-50">
+                    {visible.map((t, idx) => (
+                      <tr key={t.id} className="border-b hover:bg-gray-50">
                         <td className="px-4 py-3">{idx + 1}</td>
-                        <td className="px-4 py-3">{purchase.month}</td>
-                        <td className="px-4 py-3">{new Date(purchase.purchaseDate).toLocaleDateString()}</td>
-                        <td className="px-4 py-3">{purchase.invoiceNo}</td>
-                        <td className="px-4 py-3">{purchase.vendorName}</td>
-                        <td className="px-4 py-3">
-                          <Badge variant="outline">{purchase.paymentMode}</Badge>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <div>{new Date(t.date).toLocaleDateString()}</div>
+                          <div className="text-xs text-gray-500">{adToBs(t.date)} BS</div>
                         </td>
-                        <td className="px-4 py-3 text-right">{purchase.subtotal.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right">{purchase.vatAmount.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right font-bold">{purchase.total.toLocaleString()}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* SALES TAB */}
-        <TabsContent value="sales" className="space-y-6 mt-6">
-          <div className="flex gap-2 justify-end">
-            <Button variant="outline" onClick={() => setIsStaffDialogOpen(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              Add Staff
-            </Button>
-            <Button onClick={() => setIsSaleDialogOpen(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              Add Sale
-            </Button>
-            <Button variant="outline" onClick={() => exportToCSV(Object.values(salesByStaff), `sales_${selectedMonth === "all" ? "all" : selectedMonth}`)}>
-              <Download className="w-4 h-4 mr-2" />
-              Export
-            </Button>
-          </div>
-
-          {/* Sales Summary Stats */}
-          <div className="grid md:grid-cols-3 gap-4">
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-gray-600">Total Sales</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-bold">NPR {totalSalesAmount.toLocaleString()}</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-gray-600">VAT</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-bold text-orange-600">NPR {totalSalesVAT.toLocaleString()}</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-gray-600">Total Sales (with VAT)</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-bold text-green-600">NPR {totalSalesWithVAT.toLocaleString()}</p>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Sales by Staff Summary */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Sales Summary by Staff</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-green-700 text-white">
-                    <tr>
-                      <th className="px-4 py-3 text-left">Column 1</th>
-                      <th className="px-4 py-3 text-right">Sales</th>
-                      <th className="px-4 py-3 text-right">VAT</th>
-                      <th className="px-4 py-3 text-right">Total Sales</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.values(salesByStaff).map((staffMember: any, idx) => (
-                      <tr key={idx} className={idx % 2 === 0 ? "bg-cyan-200" : "bg-white"}>
-                        <td className="px-4 py-3">{staffMember.staffName}</td>
-                        <td className="px-4 py-3 text-right font-semibold">{staffMember.totalSales.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right">{staffMember.totalVAT.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right font-bold bg-orange-300">{staffMember.totalWithVAT.toLocaleString()}</td>
-                      </tr>
-                    ))}
-                    <tr className="bg-gray-200 font-bold">
-                      <td className="px-4 py-3">TOTAL</td>
-                      <td className="px-4 py-3 text-right">{totalSalesAmount.toLocaleString()}</td>
-                      <td className="px-4 py-3 text-right">{totalSalesVAT.toLocaleString()}</td>
-                      <td className="px-4 py-3 text-right bg-orange-300">{totalSalesWithVAT.toLocaleString()}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Detailed Sales Transactions */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Sales Transactions ({visibleSales.length})</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 border-b">
-                    <tr>
-                      <th className="px-4 py-3 text-left">S.N.</th>
-                      <th className="px-4 py-3 text-left">Month</th>
-                      <th className="px-4 py-3 text-left">Date</th>
-                      <th className="px-4 py-3 text-left">Staff</th>
-                      <th className="px-4 py-3 text-left">Payment Mode</th>
-                      <th className="px-4 py-3 text-right">Sales</th>
-                      <th className="px-4 py-3 text-right">VAT</th>
-                      <th className="px-4 py-3 text-right">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visibleSales.map((sale, idx) => (
-                      <tr key={sale.id} className="border-b hover:bg-gray-50">
-                        <td className="px-4 py-3">{idx + 1}</td>
-                        <td className="px-4 py-3">{sale.month}</td>
-                        <td className="px-4 py-3">{new Date(sale.saleDate).toLocaleDateString()}</td>
-                        <td className="px-4 py-3">{sale.staffName}</td>
+                        <td className="px-4 py-3">{groupKey(t)}</td>
                         <td className="px-4 py-3">
-                          <Badge variant="outline">{sale.paymentMode}</Badge>
+                          {t.description}
+                          {t.invoiceNo && <div className="text-xs text-gray-500">Inv# {t.invoiceNo}</div>}
                         </td>
-                        <td className="px-4 py-3 text-right">{sale.subtotal.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right">{sale.vatAmount.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right font-bold">{sale.total.toLocaleString()}</td>
+                        <td className="px-4 py-3">
+                          <Badge variant="outline">{t.paymentMethod}</Badge>
+                        </td>
+                        <td className="px-4 py-3 text-right">{t.amount.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right">{(t.taxAmount || 0).toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right font-bold">{(t.amount + (t.taxAmount || 0)).toLocaleString()}</td>
                       </tr>
                     ))}
+                    {visible.length === 0 && (
+                      <tr>
+                        <td colSpan={8} className="px-4 py-6 text-center text-gray-500">
+                          {searchQuery ? `No ${activeTab} transactions match "${searchQuery}".` : `No ${activeTab} transactions for this period.`}
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -520,358 +384,6 @@ export default function FinancialReports() {
           </Card>
         </TabsContent>
       </Tabs>
-
-      {/* Add Purchase Dialog */}
-      <Dialog open={isPurchaseDialogOpen} onOpenChange={setIsPurchaseDialogOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Add Purchase</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={(e) => {
-            e.preventDefault()
-            const formData = new FormData(e.currentTarget)
-            const vendor = vendors.find(v => v.id === parseInt(formData.get("vendorId") as string))
-            handleAddPurchase({
-              invoiceNo: formData.get("invoiceNo"),
-              vendorId: parseInt(formData.get("vendorId") as string),
-              vendorName: vendor?.name,
-              purchaseDate: formData.get("purchaseDate"),
-              month: formData.get("month"),
-              dateBS: formData.get("dateBS"),
-              subtotal: parseFloat(formData.get("subtotal") as string),
-              vatPercent: parseFloat(formData.get("vatPercent") as string),
-              nonVatAmount: parseFloat(formData.get("nonVatAmount") as string) || 0,
-              paymentMode: formData.get("paymentMode"),
-              paymentStatus: formData.get("paymentStatus"),
-              category: formData.get("category"),
-              description: formData.get("description")
-            })
-          }} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Invoice No *</Label>
-                <Input name="invoiceNo" required />
-              </div>
-              <div className="space-y-2">
-                <Label>Vendor *</Label>
-                <Select name="vendorId" required>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select vendor" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {vendors.map(vendor => (
-                      <SelectItem key={vendor.id} value={vendor.id.toString()}>{vendor.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label>Purchase Date *</Label>
-                <Input name="purchaseDate" type="date" required defaultValue={new Date().toISOString().split('T')[0]} />
-              </div>
-              <div className="space-y-2">
-                <Label>Month *</Label>
-                <Select name="month" required>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {nepaliMonths.map(month => (
-                      <SelectItem key={month} value={month}>{month}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Date (BS)</Label>
-                <Input name="dateBS" placeholder="2082/05/22" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label>Subtotal (NPR) *</Label>
-                <Input name="subtotal" type="number" step="0.01" required />
-              </div>
-              <div className="space-y-2">
-                <Label>VAT % *</Label>
-                <Input name="vatPercent" type="number" step="0.01" defaultValue="13" required />
-              </div>
-              <div className="space-y-2">
-                <Label>Non-VAT Amount</Label>
-                <Input name="nonVatAmount" type="number" step="0.01" defaultValue="0" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Payment Mode *</Label>
-                <Select name="paymentMode" defaultValue="CREDIT" required>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="CASH">CASH</SelectItem>
-                    <SelectItem value="CREDIT">CREDIT</SelectItem>
-                    <SelectItem value="CARD">CARD</SelectItem>
-                    <SelectItem value="BANK">BANK</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Payment Status *</Label>
-                <Select name="paymentStatus" defaultValue="unpaid" required>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="paid">Paid</SelectItem>
-                    <SelectItem value="unpaid">Unpaid</SelectItem>
-                    <SelectItem value="partial">Partial</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Category</Label>
-              <Input name="category" placeholder="Food, Beverages, Supplies, etc." />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Description</Label>
-              <Input name="description" />
-            </div>
-
-            <div className="flex gap-2 pt-4">
-              <Button type="button" variant="outline" onClick={() => setIsPurchaseDialogOpen(false)} className="flex-1">
-                Cancel
-              </Button>
-              <Button type="submit" className="flex-1">Add Purchase</Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Add Sale Dialog */}
-      <Dialog open={isSaleDialogOpen} onOpenChange={setIsSaleDialogOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Add Sale</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={(e) => {
-            e.preventDefault()
-            const formData = new FormData(e.currentTarget)
-            const staffMember = staff.find(s => s.id === parseInt(formData.get("staffId") as string))
-            handleAddSale({
-              staffId: parseInt(formData.get("staffId") as string),
-              staffName: staffMember?.name,
-              saleDate: formData.get("saleDate"),
-              month: formData.get("month"),
-              dateBS: formData.get("dateBS"),
-              subtotal: parseFloat(formData.get("subtotal") as string),
-              vatPercent: parseFloat(formData.get("vatPercent") as string),
-              nonVatAmount: parseFloat(formData.get("nonVatAmount") as string) || 0,
-              paymentMode: formData.get("paymentMode"),
-              category: formData.get("category"),
-              description: formData.get("description"),
-              invoiceNo: formData.get("invoiceNo"),
-              customerName: formData.get("customerName")
-            })
-          }} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Staff *</Label>
-                <Select name="staffId" required>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select staff" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {staff.map(member => (
-                      <SelectItem key={member.id} value={member.id.toString()}>{member.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Invoice No</Label>
-                <Input name="invoiceNo" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label>Sale Date *</Label>
-                <Input name="saleDate" type="date" required defaultValue={new Date().toISOString().split('T')[0]} />
-              </div>
-              <div className="space-y-2">
-                <Label>Month *</Label>
-                <Select name="month" required>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {nepaliMonths.map(month => (
-                      <SelectItem key={month} value={month}>{month}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Date (BS)</Label>
-                <Input name="dateBS" placeholder="2082/05/22" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label>Subtotal (NPR) *</Label>
-                <Input name="subtotal" type="number" step="0.01" required />
-              </div>
-              <div className="space-y-2">
-                <Label>VAT % *</Label>
-                <Input name="vatPercent" type="number" step="0.01" defaultValue="13" required />
-              </div>
-              <div className="space-y-2">
-                <Label>Non-VAT Amount</Label>
-                <Input name="nonVatAmount" type="number" step="0.01" defaultValue="0" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Payment Mode *</Label>
-                <Select name="paymentMode" defaultValue="CASH" required>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="CASH">CASH</SelectItem>
-                    <SelectItem value="CREDIT">CREDIT</SelectItem>
-                    <SelectItem value="CARD">CARD</SelectItem>
-                    <SelectItem value="QR">QR</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Category</Label>
-                <Input name="category" placeholder="Room, Food, Beverage, etc." />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Customer Name</Label>
-              <Input name="customerName" />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Description</Label>
-              <Input name="description" />
-            </div>
-
-            <div className="flex gap-2 pt-4">
-              <Button type="button" variant="outline" onClick={() => setIsSaleDialogOpen(false)} className="flex-1">
-                Cancel
-              </Button>
-              <Button type="submit" className="flex-1">Add Sale</Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Add Vendor Dialog */}
-      <Dialog open={isVendorDialogOpen} onOpenChange={setIsVendorDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Vendor</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={(e) => {
-            e.preventDefault()
-            const formData = new FormData(e.currentTarget)
-            handleAddVendor({
-              name: formData.get("name"),
-              contactPerson: formData.get("contactPerson"),
-              phone: formData.get("phone"),
-              email: formData.get("email"),
-              address: formData.get("address"),
-              panNumber: formData.get("panNumber"),
-              notes: formData.get("notes")
-            })
-          }} className="space-y-4">
-            <div className="space-y-2">
-              <Label>Vendor Name *</Label>
-              <Input name="name" required />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Contact Person</Label>
-                <Input name="contactPerson" />
-              </div>
-              <div className="space-y-2">
-                <Label>Phone</Label>
-                <Input name="phone" type="tel" />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Email</Label>
-              <Input name="email" type="email" />
-            </div>
-            <div className="space-y-2">
-              <Label>Address</Label>
-              <Input name="address" />
-            </div>
-            <div className="space-y-2">
-              <Label>PAN Number</Label>
-              <Input name="panNumber" />
-            </div>
-            <div className="space-y-2">
-              <Label>Notes</Label>
-              <Input name="notes" />
-            </div>
-            <div className="flex gap-2 pt-4">
-              <Button type="button" variant="outline" onClick={() => setIsVendorDialogOpen(false)} className="flex-1">
-                Cancel
-              </Button>
-              <Button type="submit" className="flex-1">Add Vendor</Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Add Staff Dialog */}
-      <Dialog open={isStaffDialogOpen} onOpenChange={setIsStaffDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Staff</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={(e) => {
-            e.preventDefault()
-            const formData = new FormData(e.currentTarget)
-            handleAddStaff({
-              name: formData.get("name"),
-              role: formData.get("role")
-            })
-          }} className="space-y-4">
-            <div className="space-y-2">
-              <Label>Staff Name *</Label>
-              <Input name="name" required />
-            </div>
-            <div className="space-y-2">
-              <Label>Role</Label>
-              <Input name="role" placeholder="Manager, Waiter, Receptionist, etc." />
-            </div>
-            <div className="flex gap-2 pt-4">
-              <Button type="button" variant="outline" onClick={() => setIsStaffDialogOpen(false)} className="flex-1">
-                Cancel
-              </Button>
-              <Button type="submit" className="flex-1">Add Staff</Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Plus, TrendingUp, TrendingDown, Download, Calendar, CreditCard, AlertCircle, DollarSign, Send, History, FileText, Pencil } from "lucide-react"
+import { Plus, TrendingUp, TrendingDown, Download, Calendar, CreditCard, AlertCircle, DollarSign, Send, History, FileText, Pencil, Truck, Trash2 } from "lucide-react"
+import VendorsManager from "@/components/vendors-manager"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -15,6 +16,7 @@ import { AdminLoading, AdminRefreshHint, useAdminLoader } from "@/components/adm
 // Credit management now fully database-driven
 import { addNotification } from "@/lib/notifications"
 import { roundMoney } from "@/lib/vat"
+import { adToBs } from "@/lib/nepali-date"
 import {
   fetchAccountTransactions,
   createAccountTransaction,
@@ -23,7 +25,9 @@ import {
   fetchCreditAccounts,
   createCreditAccount,
   updateCreditAccount as updateCreditAPI,
-  addCreditPayment
+  deleteCreditAccount,
+  addCreditPayment,
+  fetchVendors
 } from "@/lib/api"
 
 interface CreditPayment {
@@ -51,6 +55,8 @@ interface CreditAccount {
   payments: CreditPayment[]
 }
 
+const KNOWN_CATEGORIES = ["room_booking", "restaurant", "bar", "salary", "utilities", "supplies", "other"]
+
 interface Transaction {
   id: number
   date: string
@@ -67,12 +73,20 @@ interface Transaction {
 }
 
 export default function AccountsManager() {
-  const [activeTab, setActiveTab] = useState<"transactions" | "credit">("transactions")
+  const [activeTab, setActiveTab] = useState<"transactions" | "credit" | "vendors">("transactions")
+  const [transactionsSubTab, setTransactionsSubTab] = useState<"income" | "expense">("income")
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [creditAccounts, setCreditAccounts] = useState<CreditAccount[]>([])
+  const [vendorNames, setVendorNames] = useState<string[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null)
+  const [addType, setAddType] = useState<"income" | "expense" | "">("")
+  const [addCategory, setAddCategory] = useState("")
+  const [addDate, setAddDate] = useState(new Date().toISOString().split("T")[0])
+  const [editType, setEditType] = useState<"income" | "expense" | "">("")
+  const [editCategory, setEditCategory] = useState("")
+  const [editDate, setEditDate] = useState("")
   const [isCreditDialogOpen, setIsCreditDialogOpen] = useState(false)
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false)
   const [isHistoryDialogOpen, setIsHistoryDialogOpen] = useState(false)
@@ -84,7 +98,8 @@ export default function AccountsManager() {
 
   useEffect(() => {
     loadData()
-    
+    loadVendorNames()
+
     // Auto-refresh every 10 seconds
     const interval = setInterval(loadData, 10000)
     
@@ -117,6 +132,15 @@ export default function AccountsManager() {
     }
   }
 
+  const loadVendorNames = async () => {
+    try {
+      const vendors = await fetchVendors()
+      setVendorNames(vendors.map((v: { name: string }) => v.name))
+    } catch (error) {
+      console.error('Failed to load vendors:', error)
+    }
+  }
+
   const handleAddTransaction = async (txn: Omit<Transaction, "id"> & { notes?: string }) => {
     try {
       await createAccountTransaction({
@@ -143,6 +167,9 @@ export default function AccountsManager() {
 
   const handleEditClick = (txn: Transaction) => {
     setEditingTransaction(txn)
+    setEditType(txn.type)
+    setEditCategory(KNOWN_CATEGORIES.includes(txn.category) ? txn.category : "custom")
+    setEditDate(txn.date?.split("T")[0] || "")
     setIsEditDialogOpen(true)
   }
 
@@ -206,6 +233,18 @@ export default function AccountsManager() {
     }
   }
 
+  const handleDeleteCredit = async (account: CreditAccount) => {
+    if (confirm(`Delete credit account for ${account.guestName}? This will also remove its payment history.`)) {
+      try {
+        await deleteCreditAccount(account.id)
+        loadData()
+      } catch (error) {
+        console.error('Failed to delete credit account:', error)
+        alert('Failed to delete credit account')
+      }
+    }
+  }
+
   // Filter by month/year
   const filteredTransactions = transactions.filter(t => {
     const txnDate = new Date(t.date)
@@ -214,6 +253,7 @@ export default function AccountsManager() {
   const visibleTransactions = filteredTransactions.filter((t) =>
     matchesSearch(searchQuery, t.description, t.category, t.type, t.paymentMethod, t.amount, t.currency, t.partyName, t.invoiceNo)
   )
+  const subTabTransactions = visibleTransactions.filter((t) => t.type === transactionsSubTab)
   const visibleCredits = creditAccounts.filter((account) =>
     matchesSearch(searchQuery, account.guestName, account.guestPhone, account.guestEmail, account.status, account.notes, account.linkedBookingId)
   )
@@ -300,6 +340,11 @@ export default function AccountsManager() {
 
   return (
     <div className="space-y-6">
+      <datalist id="vendor-name-options">
+        {vendorNames.map((name) => (
+          <option key={name} value={name} />
+        ))}
+      </datalist>
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
         <div className="flex items-center gap-3">
           <h2 className="text-xl sm:text-2xl font-bold">Account Management System (AMS)</h2>
@@ -312,7 +357,12 @@ export default function AccountsManager() {
                 <Download className="w-4 h-4 mr-2" />
                 Export Excel
               </Button>
-              <Button onClick={() => setIsDialogOpen(true)}>
+              <Button onClick={() => {
+                setAddType(transactionsSubTab)
+                setAddCategory("")
+                setAddDate(new Date().toISOString().split("T")[0])
+                setIsDialogOpen(true)
+              }}>
                 <Plus className="w-4 h-4 mr-2" />
                 Add Transaction
               </Button>
@@ -329,7 +379,7 @@ export default function AccountsManager() {
       
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
-        <TabsList className="grid w-full grid-cols-2 max-w-md">
+        <TabsList className="grid w-full grid-cols-3 max-w-lg">
           <TabsTrigger value="transactions">
             <FileText className="w-4 h-4 mr-2" />
             Transactions
@@ -338,6 +388,10 @@ export default function AccountsManager() {
             <CreditCard className="w-4 h-4 mr-2" />
             <span className="hidden sm:inline">Credit/Debt Tracking</span>
             <span className="sm:hidden">Credit</span>
+          </TabsTrigger>
+          <TabsTrigger value="vendors">
+            <Truck className="w-4 h-4 mr-2" />
+            Vendors List
           </TabsTrigger>
         </TabsList>
         
@@ -413,77 +467,101 @@ export default function AccountsManager() {
         </Card>
       </div>
 
-      <AdminSearch
-        value={searchQuery}
-        onChange={setSearchQuery}
-        placeholder="Search description, category, payment..."
-      />
+      {/* Income / Expenses Sub-Tabs */}
+      <Tabs value={transactionsSubTab} onValueChange={(v) => setTransactionsSubTab(v as any)} className="w-full">
+        <TabsList className="grid w-full grid-cols-2 max-w-md">
+          <TabsTrigger value="income">
+            <TrendingUp className="w-4 h-4 mr-2" />
+            Income
+          </TabsTrigger>
+          <TabsTrigger value="expense">
+            <TrendingDown className="w-4 h-4 mr-2" />
+            Expenses
+          </TabsTrigger>
+        </TabsList>
 
-      {/* Transactions Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Transactions ({visibleTransactions.length})</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b">
-                <tr>
-                  <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Date</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Type</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Category</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Description</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Party / Invoice</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Amount</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">VAT</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Payment</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleTransactions.map(txn => (
-                  <tr key={txn.id} className="border-b hover:bg-gray-50">
-                    <td className="px-3 sm:px-6 py-4">{new Date(txn.date).toLocaleDateString()}</td>
-                    <td className="px-3 sm:px-6 py-4">
-                      <Badge variant={txn.type === "income" ? "default" : "destructive"}>
-                        {txn.type}
-                      </Badge>
-                    </td>
-                    <td className="px-3 sm:px-6 py-4">{txn.category}</td>
-                    <td className="px-3 sm:px-6 py-4">{txn.description}</td>
-                    <td className="px-3 sm:px-6 py-4 text-sm">
-                      {txn.partyName && <div className="font-medium">{txn.partyName}</div>}
-                      {txn.invoiceNo && <div className="text-xs text-gray-500">Inv# {txn.invoiceNo}</div>}
-                      {!txn.partyName && !txn.invoiceNo && <span className="text-gray-400">—</span>}
-                    </td>
-                    <td className="px-3 sm:px-6 py-4 font-bold whitespace-nowrap">{txn.currency} {txn.amount.toLocaleString()}</td>
-                    <td className="px-3 sm:px-6 py-4">
-                      {(txn.taxPercentage ?? 0) > 0 ? (
-                        <Badge variant="outline" className="text-xs whitespace-nowrap">VAT {txn.taxPercentage}%</Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-xs text-gray-500">Non-VAT</Badge>
-                      )}
-                    </td>
-                    <td className="px-3 sm:px-6 py-4">
-                      <Badge variant="outline">{txn.paymentMethod}</Badge>
-                    </td>
-                    <td className="px-3 sm:px-6 py-4">
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="outline" onClick={() => handleEditClick(txn)}>
-                          <Pencil className="w-3 h-3" />
-                        </Button>
-                        <Button size="sm" variant="destructive" onClick={() => handleDelete(txn.id)}>
-                          Delete
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+        <TabsContent value={transactionsSubTab} className="space-y-6 mt-6">
+          <AdminSearch
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search description, category, payment..."
+          />
+
+          {/* Transactions Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                {transactionsSubTab === "income" ? "Income" : "Expense"} Transactions ({subTabTransactions.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b">
+                    <tr>
+                      <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Date</th>
+                      <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Nepali Date</th>
+                      <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Category</th>
+                      <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Description</th>
+                      <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Party / Invoice</th>
+                      <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Amount</th>
+                      <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">VAT</th>
+                      <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Payment</th>
+                      <th className="px-3 sm:px-6 py-3 text-left text-sm font-semibold">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {subTabTransactions.map(txn => (
+                      <tr key={txn.id} className="border-b hover:bg-gray-50">
+                        <td className="px-3 sm:px-6 py-4">{new Date(txn.date).toLocaleDateString()}</td>
+                        <td className="px-3 sm:px-6 py-4 text-sm whitespace-nowrap">
+                          <div>{adToBs(txn.date)} BS</div>
+                          <div className="text-xs text-gray-500">{new Date(txn.date).toLocaleDateString()} AD</div>
+                        </td>
+                        <td className="px-3 sm:px-6 py-4">{txn.category}</td>
+                        <td className="px-3 sm:px-6 py-4">{txn.description}</td>
+                        <td className="px-3 sm:px-6 py-4 text-sm">
+                          {txn.partyName && <div className="font-medium">{txn.partyName}</div>}
+                          {txn.invoiceNo && <div className="text-xs text-gray-500">Inv# {txn.invoiceNo}</div>}
+                          {!txn.partyName && !txn.invoiceNo && <span className="text-gray-400">—</span>}
+                        </td>
+                        <td className="px-3 sm:px-6 py-4 font-bold whitespace-nowrap">{txn.currency} {txn.amount.toLocaleString()}</td>
+                        <td className="px-3 sm:px-6 py-4">
+                          {(txn.taxPercentage ?? 0) > 0 ? (
+                            <Badge variant="outline" className="text-xs whitespace-nowrap">VAT {txn.taxPercentage}%</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-xs text-gray-500">Non-VAT</Badge>
+                          )}
+                        </td>
+                        <td className="px-3 sm:px-6 py-4">
+                          <Badge variant="outline">{txn.paymentMethod}</Badge>
+                        </td>
+                        <td className="px-3 sm:px-6 py-4">
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="outline" onClick={() => handleEditClick(txn)}>
+                              <Pencil className="w-3 h-3" />
+                            </Button>
+                            <Button size="sm" variant="destructive" onClick={() => handleDelete(txn.id)}>
+                              Delete
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {subTabTransactions.length === 0 && (
+                      <tr>
+                        <td colSpan={9} className="px-3 sm:px-6 py-6 text-center text-gray-500">
+                          {searchQuery ? `No ${transactionsSubTab} transactions match "${searchQuery}".` : `No ${transactionsSubTab} transactions for this period.`}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
         </TabsContent>
         
@@ -662,8 +740,8 @@ export default function AccountsManager() {
                                     </Button>
                                   </>
                                 )}
-                                <Button 
-                                  size="sm" 
+                                <Button
+                                  size="sm"
                                   variant="ghost"
                                   onClick={() => {
                                     setSelectedAccount(account)
@@ -671,6 +749,13 @@ export default function AccountsManager() {
                                   }}
                                 >
                                   <History className="w-3 h-3" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => handleDeleteCredit(account)}
+                                >
+                                  <Trash2 className="w-3 h-3" />
                                 </Button>
                               </div>
                             </td>
@@ -711,6 +796,11 @@ export default function AccountsManager() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* VENDORS TAB */}
+        <TabsContent value="vendors" className="mt-6">
+          <VendorsManager />
+        </TabsContent>
       </Tabs>
 
       {/* Add Transaction Dialog */}
@@ -723,12 +813,15 @@ export default function AccountsManager() {
             e.preventDefault()
             const formData = new FormData(e.currentTarget)
             const amount = parseFloat(formData.get("amount") as string)
+            const type = formData.get("type") as "income" | "expense"
             const vatStatus = formData.get("vatStatus") as string
-            const taxPercentage = vatStatus === "vat" ? 13 : 0
+            const taxPercentage = type === "expense" && vatStatus === "vat" ? 13 : 0
+            const rawCategory = formData.get("category") as string
+            const category = rawCategory === "custom" ? (formData.get("customCategory") as string).trim() : rawCategory
             handleAddTransaction({
               date: formData.get("date") as string,
-              type: formData.get("type") as "income" | "expense",
-              category: formData.get("category") as string,
+              type,
+              category,
               description: formData.get("description") as string,
               partyName: (formData.get("partyName") as string) || null,
               invoiceNo: (formData.get("invoiceNo") as string) || null,
@@ -741,13 +834,16 @@ export default function AccountsManager() {
           }} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="date">Date *</Label>
-              <Input id="date" name="date" type="date" required defaultValue={new Date().toISOString().split("T")[0]} />
+              <Input id="date" name="date" type="date" required value={addDate} onChange={(e) => setAddDate(e.target.value)} />
+              {addDate && (
+                <p className="text-xs text-muted-foreground">Nepali Date (BS): {adToBs(addDate)}</p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="type">Type *</Label>
-                <Select name="type" required>
+                <Select name="type" required value={addType} onValueChange={(v) => setAddType(v as "income" | "expense")}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select type" />
                   </SelectTrigger>
@@ -759,7 +855,7 @@ export default function AccountsManager() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="category">Category *</Label>
-                <Select name="category" required>
+                <Select name="category" required value={addCategory} onValueChange={setAddCategory}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
@@ -771,8 +867,17 @@ export default function AccountsManager() {
                     <SelectItem value="utilities">Utilities</SelectItem>
                     <SelectItem value="supplies">Supplies</SelectItem>
                     <SelectItem value="other">Other</SelectItem>
+                    <SelectItem value="custom">+ Add New Category...</SelectItem>
                   </SelectContent>
                 </Select>
+                {addCategory === "custom" && (
+                  <Input
+                    name="customCategory"
+                    required
+                    placeholder="Enter new category name"
+                    autoFocus
+                  />
+                )}
               </div>
             </div>
 
@@ -784,7 +889,7 @@ export default function AccountsManager() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="partyName">Party / Vendor Name</Label>
-                <Input id="partyName" name="partyName" placeholder="Who it was with" />
+                <Input id="partyName" name="partyName" placeholder="Who it was with" list="vendor-name-options" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="invoiceNo">Invoice No.</Label>
@@ -812,7 +917,7 @@ export default function AccountsManager() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className={addType === "expense" ? "grid grid-cols-2 gap-4" : ""}>
               <div className="space-y-2">
                 <Label htmlFor="paymentMethod">Payment Method *</Label>
                 <Select name="paymentMethod" required>
@@ -828,18 +933,20 @@ export default function AccountsManager() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="vatStatus">VAT Status *</Label>
-                <Select name="vatStatus" defaultValue="non_vat" required>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="vat">VAT (13%)</SelectItem>
-                    <SelectItem value="non_vat">Non-VAT</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {addType === "expense" && (
+                <div className="space-y-2">
+                  <Label htmlFor="vatStatus">VAT Status *</Label>
+                  <Select name="vatStatus" defaultValue="non_vat" required>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="vat">VAT (13%)</SelectItem>
+                      <SelectItem value="non_vat">Non-VAT</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
 
             <div className="flex gap-2 pt-4">
@@ -866,12 +973,15 @@ export default function AccountsManager() {
               e.preventDefault()
               const formData = new FormData(e.currentTarget)
               const amount = parseFloat(formData.get("amount") as string)
+              const type = formData.get("type") as "income" | "expense"
               const vatStatus = formData.get("vatStatus") as string
-              const taxPercentage = vatStatus === "vat" ? 13 : 0
+              const taxPercentage = type === "expense" && vatStatus === "vat" ? 13 : 0
+              const rawCategory = formData.get("category") as string
+              const category = rawCategory === "custom" ? (formData.get("customCategory") as string).trim() : rawCategory
               handleEditTransaction(editingTransaction.id, {
                 date: formData.get("date") as string,
-                type: formData.get("type") as "income" | "expense",
-                category: formData.get("category") as string,
+                type,
+                category,
                 description: formData.get("description") as string,
                 partyName: (formData.get("partyName") as string) || null,
                 invoiceNo: (formData.get("invoiceNo") as string) || null,
@@ -884,13 +994,16 @@ export default function AccountsManager() {
             }} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="edit-date">Date *</Label>
-                <Input id="edit-date" name="date" type="date" required defaultValue={editingTransaction.date?.split("T")[0]} />
+                <Input id="edit-date" name="date" type="date" required value={editDate} onChange={(e) => setEditDate(e.target.value)} />
+                {editDate && (
+                  <p className="text-xs text-muted-foreground">Nepali Date (BS): {adToBs(editDate)}</p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-type">Type *</Label>
-                  <Select name="type" required defaultValue={editingTransaction.type}>
+                  <Select name="type" required value={editType} onValueChange={(v) => setEditType(v as "income" | "expense")}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select type" />
                     </SelectTrigger>
@@ -902,7 +1015,7 @@ export default function AccountsManager() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="edit-category">Category *</Label>
-                  <Select name="category" required defaultValue={editingTransaction.category}>
+                  <Select name="category" required value={editCategory} onValueChange={setEditCategory}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select category" />
                     </SelectTrigger>
@@ -914,8 +1027,17 @@ export default function AccountsManager() {
                       <SelectItem value="utilities">Utilities</SelectItem>
                       <SelectItem value="supplies">Supplies</SelectItem>
                       <SelectItem value="other">Other</SelectItem>
+                      <SelectItem value="custom">+ Add New Category...</SelectItem>
                     </SelectContent>
                   </Select>
+                  {editCategory === "custom" && (
+                    <Input
+                      name="customCategory"
+                      required
+                      placeholder="Enter new category name"
+                      defaultValue={KNOWN_CATEGORIES.includes(editingTransaction.category) ? "" : editingTransaction.category}
+                    />
+                  )}
                 </div>
               </div>
 
@@ -927,7 +1049,7 @@ export default function AccountsManager() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-partyName">Party / Vendor Name</Label>
-                  <Input id="edit-partyName" name="partyName" placeholder="Who it was with" defaultValue={editingTransaction.partyName || ""} />
+                  <Input id="edit-partyName" name="partyName" placeholder="Who it was with" defaultValue={editingTransaction.partyName || ""} list="vendor-name-options" />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="edit-invoiceNo">Invoice No.</Label>
@@ -955,7 +1077,7 @@ export default function AccountsManager() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className={editType === "expense" ? "grid grid-cols-2 gap-4" : ""}>
                 <div className="space-y-2">
                   <Label htmlFor="edit-paymentMethod">Payment Method *</Label>
                   <Select name="paymentMethod" required defaultValue={editingTransaction.paymentMethod}>
@@ -971,18 +1093,20 @@ export default function AccountsManager() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-vatStatus">VAT Status *</Label>
-                  <Select name="vatStatus" required defaultValue={(editingTransaction.taxPercentage ?? 0) > 0 ? "vat" : "non_vat"}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="vat">VAT (13%)</SelectItem>
-                      <SelectItem value="non_vat">Non-VAT</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                {editType === "expense" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-vatStatus">VAT Status *</Label>
+                    <Select name="vatStatus" required defaultValue={(editingTransaction.taxPercentage ?? 0) > 0 ? "vat" : "non_vat"}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="vat">VAT (13%)</SelectItem>
+                        <SelectItem value="non_vat">Non-VAT</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-2 pt-4">
