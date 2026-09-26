@@ -64,8 +64,6 @@ export const BOOKING_SOURCES = [
   { value: "website", label: "Website" },
   { value: "phone", label: "Phone" },
   { value: "walkin", label: "Walk-in" },
-  { value: "travel_agent", label: "Travel Agent" },
-  { value: "company", label: "Company" },
   { value: "business", label: "Business Partner" },
 ] as const
 
