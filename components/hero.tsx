@@ -13,12 +13,18 @@ interface HeroMedia {
 }
 
 const defaultSettings: HeroSettings = {
-  backgroundImage: "/luxury-mountain-lodge.jpg",
+  backgroundImage: "/hero-himalayan-terrace-sunrise.jpg",
   videoUrl: "",
   title: "Dhampus Eco Lodge",
   subtitle:
     "Experience unparalleled luxury nestled at 1,650 meters, where pristine Himalayan vistas meet sustainable elegance and authentic Nepali hospitality.",
 }
+
+const defaultHeroMedia: HeroMedia[] = [
+  { id: -1, type: "image", url: "/hero-himalayan-terrace-sunrise.jpg", order: 0 },
+  { id: -2, type: "image", url: "/hero-lodge-terraced-fields-sunset.jpg", order: 1 },
+  { id: -3, type: "image", url: "/hero-annapurna-alpenglow.jpg", order: 2 },
+]
 
 function splitTitle(title: string) {
   if (/dhampus/i.test(title) && /eco lodge/i.test(title)) {
@@ -44,7 +50,7 @@ const stats = [
 
 export default function Hero() {
   const [settings, setSettings] = useState<HeroSettings>(defaultSettings)
-  const [heroMedia, setHeroMedia] = useState<HeroMedia[]>([])
+  const [heroMedia, setHeroMedia] = useState<HeroMedia[]>(defaultHeroMedia)
   const [currentMediaIndex, setCurrentMediaIndex] = useState(0)
   const [nextMediaIndex, setNextMediaIndex] = useState(0)
   const [isTransitioning, setIsTransitioning] = useState(false)

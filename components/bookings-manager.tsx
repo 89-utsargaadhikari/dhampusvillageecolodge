@@ -151,7 +151,7 @@ function summarizeRooms(members: Booking[]) {
   for (const member of members) {
     const type = member.room?.trim() || "Room"
     const occ = member.occupancy || ""
-    const key = occ ? `${type} · ${occ}` : type
+    const key = [type, occ, member.extraBed ? "+ extra bed" : ""].filter(Boolean).join(" · ")
     buckets.set(key, (buckets.get(key) || 0) + 1)
   }
   const summary = [...buckets.entries()].map(([label, count]) => (count > 1 ? `${count} × ${label}` : label))
@@ -818,6 +818,11 @@ export default function BookingsManager() {
                       <p className="mt-0.5 text-xs text-gray-500">
                         {contact || "No contact"} · {sourceLabel(primary.bookingSource)}
                       </p>
+                      {primary.notes ? (
+                        <p className="mt-1 text-xs italic text-amber-700" title={primary.notes}>
+                          Request: {primary.notes}
+                        </p>
+                      ) : null}
                     </td>
                     <td className="px-3 py-3 whitespace-nowrap">
                       <p className="text-sm text-gray-800">{formatStayRange(primary.checkin, primary.checkout)}</p>
@@ -882,6 +887,7 @@ export default function BookingsManager() {
                                 <th className="px-3 py-2">Occ.</th>
                                 <th className="px-3 py-2">Pax</th>
                                 <th className="px-3 py-2">Room #</th>
+                                <th className="px-3 py-2">Extra Bed</th>
                                 <th className="px-3 py-2 text-right">Stay total</th>
                               </tr>
                             </thead>
@@ -892,6 +898,7 @@ export default function BookingsManager() {
                                   <td className="px-3 py-2 text-gray-600">{member.occupancy || "—"}</td>
                                   <td className="px-3 py-2 text-gray-600">{member.numberOfGuests || 1}</td>
                                   <td className="px-3 py-2 text-gray-600">{member.roomNumber ? `#${member.roomNumber}` : "—"}</td>
+                                  <td className="px-3 py-2 text-gray-600">{member.extraBed ? "Yes" : "—"}</td>
                                   <td className="px-3 py-2 text-right text-gray-800">{formatMoney(member.price, member.currency || primary.currency)}</td>
                                 </tr>
                               ))}

@@ -215,6 +215,42 @@ export default function BillingManager() {
     })
   }
 
+  // Removes a single line item from THIS bill only - the underlying restaurant
+  // order is left untouched, exactly like removeOrderFromBill above. Menu prices
+  // are VAT-inclusive, so the recorded VAT is scaled down with the remaining
+  // charge rather than recalculated from scratch. Scaling successively stays
+  // proportional to the original order, since (t*s1/s0)*s2/s1 === t*s2/s0.
+  const removeItemFromBill = (orderId: number, itemIndex: number) => {
+    if (!confirm("Remove this item from the bill? It won't be charged to this guest.")) return
+    setSelectedBill((current) => {
+      if (!current) return current
+      const nextOrders = current.restaurantOrders.map((order) => {
+        if (order.id !== orderId) return order
+        const remainingItems = (order.items || []).filter((_: any, idx: number) => idx !== itemIndex)
+        const previousSubtotal = orderInclusiveSubtotal(order)
+        const nextSubtotal = roundMoney(
+          remainingItems.reduce(
+            (sum: number, item: any) => sum + (item.quantity || 0) * (item.price || 0),
+            0
+          )
+        )
+        const ratio = previousSubtotal > 0 ? nextSubtotal / previousSubtotal : 0
+        return {
+          ...order,
+          items: remainingItems,
+          subtotal: nextSubtotal,
+          total: roundMoney((order.total || 0) * ratio),
+          tax: roundMoney((order.tax || 0) * ratio),
+        }
+      })
+      const restaurantInclusive = roundMoney(
+        nextOrders.reduce((sum, order) => sum + orderInclusiveSubtotal(order), 0)
+      )
+      applyOrderReference(nextOrders)
+      return { ...current, restaurantOrders: nextOrders, restaurantInclusive, restaurantTotal: restaurantInclusive }
+    })
+  }
+
   useEffect(() => {
     loadData()
     
@@ -229,9 +265,11 @@ export default function BillingManager() {
       const allBookings = await fetchBookings()
       console.log("📊 Billing - All bookings:", allBookings.length)
       
-      // Show bookings that are "Confirmed" OR "Checked In" with room numbers
-      const activeBookings = allBookings.filter((b: any) => 
-        (b.status === "Confirmed" || b.status === "Checked In") && b.roomNumber
+      // Show bookings that are "Confirmed" OR "Checked In", regardless of whether
+      // a room number has been assigned yet - a booking without a room is still
+      // billable (guest, dates, price are enough) and shouldn't be hidden here.
+      const activeBookings = allBookings.filter((b: any) =>
+        b.status === "Confirmed" || b.status === "Checked In"
       )
       console.log("✅ Billing - Active bookings ready for checkout:", activeBookings.length)
       console.log("Active bookings:", activeBookings.map((b: any) => `${b.guest} - Room ${b.roomNumber} - Status: ${b.status}`))
@@ -925,9 +963,25 @@ Thank you for staying with us!
                         {(order.items || []).map((item: any, idx: number) => (
                           <div key={idx} className="flex justify-between text-xs text-gray-600 ml-4">
                             <span>{item.quantity}x {item.name} @ NPR {item.price}</span>
-                            <span>NPR {(item.quantity * item.price).toFixed(2)}</span>
+                            <span className="flex items-center gap-2">
+                              NPR {(item.quantity * item.price).toFixed(2)}
+                              <button
+                                type="button"
+                                onClick={() => removeItemFromBill(order.id, idx)}
+                                className="text-gray-400 hover:text-red-600 print:hidden"
+                                aria-label={`Remove ${item.name} from this bill`}
+                                title="Remove this item from the bill"
+                              >
+                                <X className="size-3" />
+                              </button>
+                            </span>
                           </div>
                         ))}
+                        {(order.items || []).length === 0 && (
+                          <div className="text-xs italic text-gray-400 ml-4">
+                            All items removed from this bill
+                          </div>
+                        )}
                         <div className="flex justify-between text-xs text-gray-600 ml-4 mt-1">
                           <span>Order VAT recorded ({order.taxPercentage || 0}%)</span>
                           <span>NPR {(order.tax || 0).toFixed(2)}</span>
