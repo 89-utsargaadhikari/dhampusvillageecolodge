@@ -456,60 +456,52 @@ export const getAvailableRoomNumbers = (
   return room.roomNumbers.filter((num) => !occupiedNumbers.includes(num))
 }
 
-// Image Upload Helper (converts to base64 for localStorage with AGGRESSIVE compression)
-export const convertImageToBase64 = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const img = new Image()
-      img.onload = () => {
-        // Create canvas to compress image
-        const canvas = document.createElement('canvas')
-        const ctx = canvas.getContext('2d')
-        
-        // SMALLER max dimensions to save more space
-        const MAX_WIDTH = 600
-        const MAX_HEIGHT = 400
-        
-        let width = img.width
-        let height = img.height
-        
-        // Calculate new dimensions
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height = height * (MAX_WIDTH / width)
-            width = MAX_WIDTH
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width = width * (MAX_HEIGHT / height)
-            height = MAX_HEIGHT
-          }
-        }
-        
-        canvas.width = width
-        canvas.height = height
-        
-        // Draw and compress
-        ctx?.drawImage(img, 0, 0, width, height)
-        
-        // Convert to base64 with 50% quality (more aggressive)
-        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.5)
-        
-        // Check if still too large (> 200KB)
-        if (compressedBase64.length > 200000) {
-          alert('Image is too large even after compression. Please use a smaller image or an external URL.')
-          reject(new Error('Image too large'))
-          return
-        }
-        
-        resolve(compressedBase64)
-      }
-      img.onerror = reject
-      img.src = e.target?.result as string
-    }
-    reader.onerror = reject
-    reader.readAsDataURL(file)
+// Media Upload Helper: uploads to Vercel Blob and returns the public URL.
+// Photos up to WEB_MAX_SIZE px are uploaded untouched. Larger photos get a
+// high-quality WEB_MAX_SIZE copy for the site (so pages stay fast), and the
+// untouched original is kept alongside it in Blob under uploads/originals/.
+const WEB_MAX_SIZE = 2560
+const RESIZABLE_TYPES = ["image/jpeg", "image/png", "image/webp"]
+
+const blobUpload = async (pathname: string, data: Blob) => {
+  const { upload } = await import("@vercel/blob/client")
+  const result = await upload(pathname, data, { access: "public", handleUploadUrl: "/api/upload" })
+  return result.url
+}
+
+const loadImage = (file: File): Promise<HTMLImageElement> =>
+  new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = reject
+    img.src = URL.createObjectURL(file)
   })
+
+export const uploadMedia = async (file: File): Promise<string> => {
+  const name = file.name.replace(/[^\w.-]/g, "_")
+  if (!RESIZABLE_TYPES.includes(file.type)) return blobUpload(`uploads/${name}`, file)
+
+  const img = await loadImage(file)
+  URL.revokeObjectURL(img.src)
+  const scale = WEB_MAX_SIZE / Math.max(img.naturalWidth, img.naturalHeight)
+  if (scale >= 1) return blobUpload(`uploads/${name}`, file)
+
+  const canvas = document.createElement("canvas")
+  canvas.width = Math.round(img.naturalWidth * scale)
+  canvas.height = Math.round(img.naturalHeight * scale)
+  const ctx = canvas.getContext("2d")!
+  ctx.imageSmoothingQuality = "high"
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+  // PNGs stay PNG so logos keep their transparent background
+  const type = file.type === "image/png" ? "image/png" : "image/jpeg"
+  const webCopy = await new Promise<Blob>((resolve, reject) =>
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Could not process image"))), type, 0.92),
+  )
+
+  const [url] = await Promise.all([
+    blobUpload(`uploads/${name}`, webCopy),
+    blobUpload(`uploads/originals/${name}`, file),
+  ])
+  return url
 }
 

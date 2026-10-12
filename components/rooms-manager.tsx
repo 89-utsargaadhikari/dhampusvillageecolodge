@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Trash2, Edit, Plus, X, Upload, Image as ImageIcon } from "lucide-react"
-import { convertImageToBase64, type Room } from "@/lib/storage"
+import { uploadMedia, type Room } from "@/lib/storage"
 import { fetchRooms, createRoom, updateRoom as updateRoomAPI, deleteRoom as deleteRoomAPI } from "@/lib/api"
 import { CURRENCIES, STANDARD_ROOM_TYPES, currencySymbol } from "@/lib/hotel"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -89,9 +89,9 @@ export default function RoomsManager() {
     const file = e.target.files?.[0]
     if (file) {
       try {
-        const base64 = await convertImageToBase64(file)
-        setFormData({ ...formData, image: base64 })
-        setImagePreview(base64)
+        const url = await uploadMedia(file)
+        setFormData({ ...formData, image: url })
+        setImagePreview(url)
       } catch (error) {
         console.error("Error uploading image:", error)
         alert("Failed to upload image. Please try again.")
