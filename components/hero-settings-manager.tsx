@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import { Upload, X, Save, Plus, Trash2, Image as ImageIcon, Video as VideoIcon } from "lucide-react"
-import { convertImageToBase64, type HeroSettings } from "@/lib/storage"
+import { uploadMedia, type HeroSettings } from "@/lib/storage"
 import { fetchHeroSettings, updateHeroSettings } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -93,9 +93,9 @@ export default function HeroSettingsManager() {
     const file = e.target.files?.[0]
     if (file) {
       try {
-        const base64 = await convertImageToBase64(file)
-        setSettings({ ...settings, backgroundImage: base64 })
-        setImagePreview(base64)
+        const url = await uploadMedia(file)
+        setSettings({ ...settings, backgroundImage: url })
+        setImagePreview(url)
       } catch (error) {
         console.error("Error uploading image:", error)
         alert("Failed to upload image. Please try again.")
@@ -107,9 +107,9 @@ export default function HeroSettingsManager() {
     const file = e.target.files?.[0]
     if (file) {
       try {
-        const base64 = await convertImageToBase64(file)
-        setSettings({ ...settings, videoUrl: base64 })
-        setVideoPreview(base64)
+        const url = await uploadMedia(file)
+        setSettings({ ...settings, videoUrl: url })
+        setVideoPreview(url)
       } catch (error) {
         console.error("Error uploading video:", error)
         alert("Failed to upload video. Please try again.")
@@ -143,8 +143,8 @@ export default function HeroSettingsManager() {
     if (!file) return
 
     try {
-      const base64 = await convertImageToBase64(file)
-      setNewMedia({ ...newMedia, url: base64 })
+      const url = await uploadMedia(file)
+      setNewMedia({ ...newMedia, url })
     } catch (error) {
       console.error("Error uploading file:", error)
       alert("Failed to upload file")

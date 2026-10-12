@@ -26,6 +26,20 @@ const defaultHeroMedia: HeroMedia[] = [
   { id: -3, type: "image", url: "/hero-annapurna-alpenglow.jpg", order: 2 },
 ]
 
+// Shows the whole photo, never cropped, whatever its shape. Space the photo
+// doesn't cover is filled with a blurred, darkened copy of the same photo.
+function FullPhoto({ url, className = "", style }: { url: string; className?: string; style?: React.CSSProperties }) {
+  return (
+    <div className={`absolute inset-0 ${className}`} style={style}>
+      <div
+        className="absolute inset-0 scale-110 bg-cover bg-center blur-2xl brightness-50"
+        style={{ backgroundImage: `url(${url})` }}
+      />
+      <img src={url} alt="" className="absolute inset-0 h-full w-full object-contain" />
+    </div>
+  )
+}
+
 function splitTitle(title: string) {
   if (/dhampus/i.test(title) && /eco lodge/i.test(title)) {
     return { primary: "Dhampus", accent: "Eco Lodge" }
@@ -134,19 +148,12 @@ export default function Hero() {
 
           {currentMedia?.type === "image" && (
             <>
-              <div
-                className="absolute inset-0 scale-105 bg-cover bg-center transition-opacity duration-[2000ms]"
-                style={{
-                  backgroundImage: `url(${currentMedia.url})`,
-                  opacity: isTransitioning ? 0 : 1,
-                }}
+              {isTransitioning && nextMedia?.type === "image" && <FullPhoto url={nextMedia.url} />}
+              <FullPhoto
+                url={currentMedia.url}
+                className="transition-opacity duration-[1500ms]"
+                style={{ opacity: isTransitioning ? 0 : 1 }}
               />
-              {isTransitioning && nextMedia?.type === "image" && (
-                <div
-                  className="absolute inset-0 scale-105 bg-cover bg-center"
-                  style={{ backgroundImage: `url(${nextMedia.url})` }}
-                />
-              )}
             </>
           )}
         </div>
@@ -160,10 +167,7 @@ export default function Hero() {
           playsInline
         />
       ) : settings.backgroundImage ? (
-        <div
-          className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: `url(${settings.backgroundImage})` }}
-        />
+        <FullPhoto url={settings.backgroundImage} />
       ) : null}
 
       {/* Cinematic grading: darker left edge for copy, soft bottom fade */}

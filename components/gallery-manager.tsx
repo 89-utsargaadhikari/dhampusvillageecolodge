@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Trash2, Plus, Upload, X } from "lucide-react"
-import { convertImageToBase64, type GalleryItem } from "@/lib/storage"
+import { uploadMedia, type GalleryItem } from "@/lib/storage"
 import { fetchGallery, createGalleryItem, deleteGalleryItem as deleteGalleryAPI } from "@/lib/api"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -53,9 +53,9 @@ export default function GalleryManager() {
     const file = e.target.files?.[0]
     if (file) {
       try {
-        const base64 = await convertImageToBase64(file)
-        setFormData({ ...formData, src: base64 })
-        setImagePreview(base64)
+        const url = await uploadMedia(file)
+        setFormData({ ...formData, src: url })
+        setImagePreview(url)
       } catch (error) {
         console.error("Error uploading image:", error)
         alert("Failed to upload image. Please try again.")

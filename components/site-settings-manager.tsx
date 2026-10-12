@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Upload, X, Save } from "lucide-react"
-import { convertImageToBase64, type SiteSettings } from "@/lib/storage"
+import { uploadMedia, type SiteSettings } from "@/lib/storage"
 import { fetchSiteSettings, updateSiteSettings } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -43,9 +43,9 @@ export default function SiteSettingsManager() {
     const file = e.target.files?.[0]
     if (file) {
       try {
-        const base64 = await convertImageToBase64(file)
-        setSettings({ ...settings, logoImage: base64 })
-        setLogoPreview(base64)
+        const url = await uploadMedia(file)
+        setSettings({ ...settings, logoImage: url })
+        setLogoPreview(url)
       } catch (error) {
         console.error("Error uploading logo:", error)
         alert("Failed to upload logo. Please try again.")
